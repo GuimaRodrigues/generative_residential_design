@@ -47,9 +47,12 @@ requirements + generation config + seed → same candidates and ranking
 
 The architectural scene derives a second deterministic appearance code from the
 candidate seed and attempt. It selects one of four modern exterior palettes, one
-of three facade-detail variants, and a gable, hip, or parapeted flat roof. Window
-proportions and mullions follow the selected style. This keeps replay stable while
-making candidates and newly generated seeds visually distinct in 3D.
+of five facade compositions, and a gable, hip, or parapeted flat roof, with a
+strong bias toward the latter for a contemporary residential language. Window
+proportions respond to both room use and exterior style; facade variants control
+frames, balconies, pergolas, screens, cladding, and material contrast. This keeps
+replay stable while making candidates and newly generated seeds visually distinct
+in 3D.
 
 ## 7. Hard validation
 

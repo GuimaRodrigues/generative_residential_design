@@ -24,10 +24,14 @@ class ArchitecturalSceneBuilder {
     final appearance = ArchitecturalAppearance3D(
       exteriorStyle: ArchitecturalExteriorStyle
           .values[appearanceCode % ArchitecturalExteriorStyle.values.length],
-      facadeVariant: (appearanceCode >>> 7) % 3,
+      facadeVariant: (appearanceCode >>> 7) % 5,
     );
-    final roofKind = ArchitecturalRoofKind
-        .values[(appearanceCode >>> 3) % ArchitecturalRoofKind.values.length];
+    final roofRoll = (appearanceCode >>> 3) % 10;
+    final roofKind = switch (roofRoll) {
+      < 7 => ArchitecturalRoofKind.flat,
+      < 9 => ArchitecturalRoofKind.hip,
+      _ => ArchitecturalRoofKind.gable,
+    };
     final levels = <ArchitecturalLevel3D>[];
     for (final floor in candidate.floors) {
       final spaces = floor.rooms
@@ -102,7 +106,7 @@ class ArchitecturalSceneBuilder {
         ArchitecturalRoofKind.flat => 0.24,
       },
       overhang: kind == ArchitecturalRoofKind.flat
-          ? 0.18
+          ? 0.3
           : dimensions.roofOverhang,
       ridgeAxis: footprint.width >= footprint.height
           ? RoofRidgeAxis.x
@@ -261,6 +265,7 @@ class ArchitecturalSceneBuilder {
           id: 'opening-$floorIndex-${kind.name}-${openings.length + 1}',
           wallId: segment.wall.id,
           floorIndex: floorIndex,
+          roomType: segment.space.roomType,
           kind: kind,
           centerOffset: (segment.startOffset + segment.endOffset) / 2,
           width: width,
@@ -299,28 +304,36 @@ class ArchitecturalSceneBuilder {
         RoomType.bathroom || RoomType.toilet || RoomType.laundry => true,
         _ => false,
       };
-      final widthFactor = switch (exteriorStyle) {
+      final socialRoom = switch (segment.space.roomType) {
+        RoomType.livingRoom || RoomType.diningRoom || RoomType.kitchen => true,
+        _ => false,
+      };
+      final baseWidthFactor = switch (exteriorStyle) {
         ArchitecturalExteriorStyle.lightMinimal => 0.52,
         ArchitecturalExteriorStyle.warmModern => 0.44,
         ArchitecturalExteriorStyle.graphiteModern => 0.36,
         ArchitecturalExteriorStyle.coastalModern => 0.48,
       };
+      final widthFactor = baseWidthFactor + (socialRoom ? 0.16 : 0);
       final regularHeight = switch (exteriorStyle) {
-        ArchitecturalExteriorStyle.lightMinimal => 1.3,
-        ArchitecturalExteriorStyle.warmModern => 1.18,
-        ArchitecturalExteriorStyle.graphiteModern => 1.45,
-        ArchitecturalExteriorStyle.coastalModern => 1.12,
+        ArchitecturalExteriorStyle.lightMinimal => socialRoom ? 1.82 : 1.42,
+        ArchitecturalExteriorStyle.warmModern => socialRoom ? 1.7 : 1.34,
+        ArchitecturalExteriorStyle.graphiteModern => socialRoom ? 1.92 : 1.56,
+        ArchitecturalExteriorStyle.coastalModern => socialRoom ? 1.76 : 1.38,
       };
       final regularSill = switch (exteriorStyle) {
-        ArchitecturalExteriorStyle.lightMinimal => 0.78,
-        ArchitecturalExteriorStyle.warmModern => 0.88,
-        ArchitecturalExteriorStyle.graphiteModern => 0.66,
-        ArchitecturalExteriorStyle.coastalModern => 0.92,
+        ArchitecturalExteriorStyle.lightMinimal => socialRoom ? 0.32 : 0.72,
+        ArchitecturalExteriorStyle.warmModern => socialRoom ? 0.38 : 0.78,
+        ArchitecturalExteriorStyle.graphiteModern => socialRoom ? 0.24 : 0.58,
+        ArchitecturalExteriorStyle.coastalModern => socialRoom ? 0.34 : 0.76,
       };
       final windowWidth = wetRoom
           ? math.min(0.75, availableWidth)
           : math.min(
-              (segment.length * widthFactor).clamp(0.78, 2.15),
+              (segment.length * widthFactor).clamp(
+                0.82,
+                socialRoom ? 3.4 : 2.4,
+              ),
               availableWidth,
             );
       addOpening(

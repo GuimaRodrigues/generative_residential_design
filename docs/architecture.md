@@ -62,11 +62,14 @@ view into a small JavaScript adapter. Three.js and OrbitControls are pinned and
 vendored locally; they are presentation dependencies and do not enter the
 domain or generation engine. Exterior mode renders continuous stacked walls and
 slabs, gable, hip, or parapeted flat main roofs, flat roofs over exposed lower
-volumes, style-dependent facade materials and window proportions, a covered
-entry, garage door, pedestrian path, driveway, lawn, sidewalk, curb, and asphalt
-street. Cutaway mode fades non-selected levels, exposes the aligned stair opening,
-and preserves ray-cast room inspection. The adapter owns WebGL lifecycle, camera
-controls, street-facing initial framing, resize handling, and GPU-resource disposal.
+volumes, and five seed-derived contemporary facade compositions. These combine
+cantilevered frames, large sliding glazing, glass balconies, pergolas, brise-soleil,
+garage portals, wood/stone/concrete accents, warm entry lighting, planters, and a
+small ornamental tree. The site context includes pedestrian and vehicle access,
+lawn, sidewalk, curb, and asphalt street. Cutaway mode fades non-selected levels,
+exposes the aligned stair opening, and preserves ray-cast room inspection. The
+adapter owns WebGL lifecycle, camera controls, street-facing initial framing,
+resize handling, and GPU-resource disposal.
 
 ## Persistence boundary
 

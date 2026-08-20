@@ -98,6 +98,7 @@ class ArchitecturalOpening3D {
     required this.id,
     required this.wallId,
     required this.floorIndex,
+    required this.roomType,
     required this.kind,
     required this.centerOffset,
     required this.width,
@@ -108,6 +109,7 @@ class ArchitecturalOpening3D {
   final String id;
   final String wallId;
   final int floorIndex;
+  final RoomType roomType;
   final ArchitecturalOpeningKind kind;
   final double centerOffset;
   final double width;
@@ -118,6 +120,7 @@ class ArchitecturalOpening3D {
     'id': id,
     'wallId': wallId,
     'floorIndex': floorIndex,
+    'roomType': roomType.name,
     'kind': kind.name,
     'centerOffset': centerOffset,
     'width': width,

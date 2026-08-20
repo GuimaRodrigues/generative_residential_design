@@ -64,12 +64,20 @@ void main() {
       ),
       hasLength(1),
     );
+    final windows = openings
+        .where((opening) => opening.kind == ArchitecturalOpeningKind.window)
+        .toList(growable: false);
+    expect(windows, isNotEmpty);
     expect(
-      openings.where(
-        (opening) => opening.kind == ArchitecturalOpeningKind.window,
+      windows.every(
+        (opening) =>
+            opening.roomType == RoomType.livingRoom ||
+            opening.roomType == RoomType.kitchen,
       ),
-      isNotEmpty,
+      isTrue,
     );
+    expect(windows.every((opening) => opening.height >= 1.7), isTrue);
+    expect(windows.every((opening) => opening.sillHeight <= 0.38), isTrue);
     expect(scene.roof, isNotNull);
     expect(scene.roof!.footprint, scene.levels.single.footprint);
   });
@@ -114,7 +122,11 @@ void main() {
       reason: 'walls must meet the underside of the next slab without a gap',
     );
     expect(scene.roof!.baseElevation, closeTo(6.02, 1e-9));
-    expect(scene.roof!.ridgeHeight, greaterThan(1));
+    if (scene.roof!.kind == ArchitecturalRoofKind.flat) {
+      expect(scene.roof!.ridgeHeight, 0.24);
+    } else {
+      expect(scene.roof!.ridgeHeight, greaterThan(0.9));
+    }
     expect(scene.levels.expand((level) => level.spaces), hasLength(2));
     expect(
       scene.levels
@@ -140,6 +152,14 @@ void main() {
     expect(
       (json['roof']! as Map<String, Object>)['kind'],
       scene.roof!.kind.name,
+    );
+    final serializedLevels = json['levels']! as List<Map<String, Object?>>;
+    final serializedOpenings = serializedLevels
+        .expand((level) => level['openings']! as List<Map<String, Object>>)
+        .toList(growable: false);
+    expect(
+      serializedOpenings.every((opening) => opening['roomType'] is String),
+      isTrue,
     );
   });
 
@@ -194,7 +214,7 @@ void main() {
       ),
     ];
     final scenes = <ArchitecturalScene3D>[
-      for (var seed = 1; seed <= 24; seed++)
+      for (var seed = 1; seed <= 96; seed++)
         const ArchitecturalSceneBuilder().build(
           candidate: _candidate(floors, seed: seed, attempt: seed % 5),
           site: site,
@@ -203,11 +223,21 @@ void main() {
 
     expect(
       scenes.map((scene) => scene.appearance.exteriorStyle).toSet().length,
-      greaterThanOrEqualTo(3),
+      ArchitecturalExteriorStyle.values.length,
+    );
+    expect(
+      scenes.map((scene) => scene.appearance.facadeVariant).toSet(),
+      containsAll(<int>[0, 1, 2, 3, 4]),
     );
     expect(
       scenes.map((scene) => scene.roof!.kind).toSet(),
       containsAll(ArchitecturalRoofKind.values),
+    );
+    expect(
+      scenes
+          .where((scene) => scene.roof!.kind == ArchitecturalRoofKind.flat)
+          .length,
+      greaterThan(scenes.length ~/ 2),
     );
     final first = const ArchitecturalSceneBuilder().build(
       candidate: _candidate(floors, seed: 98231, attempt: 7),

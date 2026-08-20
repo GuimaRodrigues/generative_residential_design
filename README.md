@@ -15,7 +15,7 @@ This is an early generative-design foundation. It is not an AI image generator, 
 - Area-guided recursive slicing/BSP layout generation on a 0.25 m grid
 - Multiple candidates, hard validation, category scores, deduplication, and ranking
 - Candidate selection, floor switching, pan/zoom, and selectable room inspection
-- Interactive WebGL 3D with connected floor massing, an attached garage wing, three roof families, four deterministic modern facade palettes, varied openings, pedestrian/vehicle access, sidewalk, curb, asphalt street, Exterior/Cutaway modes, and synchronized selection
+- Interactive WebGL 3D with connected floor massing, an attached garage wing, modern flat-roof bias, five deterministic facade compositions, large glazing, balconies, cantilevered frames, pergolas, brise-soleil, mixed materials, landscaping, pedestrian/vehicle access, sidewalk, curb, asphalt street, Exterior/Cutaway modes, and synchronized selection
 - Versioned project JSON import/export and domain-generated vector SVG export
 - Feasibility errors and generation rejection diagnostics
 
@@ -109,7 +109,7 @@ Tests cover geometry, all street orientations, serialization roundtrips, feasibi
 - Rectangular lots and rectangular slicing layouts only
 - Rectangular room partitions with a supported L-shaped attached-garage composition; no general free-form footprint or circulation graph synthesis
 - No furniture, structure, plumbing, sunlight, irregular boundaries, or manual wall editing
-- Roofs, facade styling, driveway, sidewalk/street context, and openings are heuristic preview geometry; doors/windows are not yet editable wall cutouts or a complete circulation graph
+- Roofs, facade compositions, landscaping, driveway, sidewalk/street context, and openings are heuristic preview geometry; doors/windows are not yet editable wall cutouts or a complete circulation graph
 - Heuristics are not jurisdictional codes or professional architectural review
 - Generation runs bounded on the browser event loop; the engine boundary is ready for a future Web Worker executor
 - Hill-climbing genome mutation is not yet enabled; the current search uses independent seeded slicing candidates
