@@ -5,9 +5,12 @@ import '../../core/geometry/rect_2d.dart';
 import '../../core/random/deterministic_random.dart';
 import '../../domain/design/design_candidate.dart';
 import '../../domain/design/floor_plan.dart';
+import '../../domain/design/generated_room.dart';
 import '../../domain/design/score_breakdown.dart';
 import '../../domain/requirements/design_requirements.dart';
 import '../../domain/requirements/room_requirement.dart';
+import '../../domain/requirements/room_type.dart';
+import '../../domain/site/site.dart';
 import '../partitioning/partition_generator.dart';
 import '../scoring/design_scorer.dart';
 import '../validation/design_validator.dart';
@@ -155,6 +158,11 @@ class FloorPlanGenerator {
     );
     final flexible = <RoomInstance>[];
     for (final room in requirements.normalizeRooms()) {
+      if (room.roomType == RoomType.garage &&
+          room.preferredFloor != PreferredFloor.upper) {
+        assignments[0].add(room);
+        continue;
+      }
       switch (room.preferredFloor) {
         case PreferredFloor.ground:
           assignments[0].add(room);
@@ -210,6 +218,7 @@ class FloorPlanGenerator {
         )
         .toList(growable: false);
     Rect2D? supportingFootprint;
+    Rect2D? verticalCoreBounds;
     for (var floor = 0; floor < requirements.floorCount; floor++) {
       final rooms = assignments[floor];
       if (rooms.isEmpty) {
@@ -229,39 +238,294 @@ class FloorPlanGenerator {
       final upperFloorTarget = floor + 1 < floorTargets.length
           ? floorTargets.skip(floor + 1).fold<double>(0, math.max)
           : 0.0;
-      PartitionOutcome? outcome;
+      final garageMinimumArea = floor == 0 && upperFloorMinimum > 0
+          ? rooms
+                .where((room) => room.roomType == RoomType.garage)
+                .fold<double>(0, (sum, room) => sum + room.minArea)
+          : 0.0;
+      final garageTargetArea = floor == 0 && upperFloorTarget > 0
+          ? rooms
+                .where((room) => room.roomType == RoomType.garage)
+                .fold<double>(0, (sum, room) => sum + room.targetArea)
+          : 0.0;
+      _GeneratedFloorLayout? layout;
       Rect2D? footprint;
-      for (var retry = 0; retry < 18 && outcome == null; retry++) {
+      for (var retry = 0; retry < 18 && layout == null; retry++) {
         footprint = _createFootprint(
           rooms: rooms,
           envelope: supportingFootprint ?? requirements.site.buildableEnvelope,
           budget: budget,
           grid: config.gridSize,
           random: random,
-          minimumFootprintArea: upperFloorMinimum,
-          targetFootprintArea: upperFloorTarget,
-          centerInEnvelope: floor > 0,
+          minimumFootprintArea: upperFloorMinimum + garageMinimumArea,
+          targetFootprintArea: upperFloorTarget + garageTargetArea,
+          anchorToRearForStreet: floor > 0
+              ? requirements.site.streetSide
+              : null,
+          requiredBounds: floor > 0 ? verticalCoreBounds : null,
         );
         if (footprint == null) continue;
-        outcome = partitioner.generate(
+        layout = _partitionFloor(
           rooms: rooms,
           footprint: footprint,
           floorIndex: floor,
+          site: requirements.site,
           random: random,
+          grid: config.gridSize,
+          verticalCoreBounds: verticalCoreBounds,
+          partitioner: partitioner,
         );
       }
-      if (outcome == null || footprint == null) return null;
+      if (layout == null || footprint == null) return null;
       plans.add(
         FloorPlan(
           floorIndex: floor,
           footprint: footprint,
-          rooms: List.unmodifiable(outcome.rooms),
+          rooms: List.unmodifiable(layout.rooms),
         ),
       );
-      supportingFootprint = footprint;
+      supportingFootprint = layout.upperSupportFootprint;
+      verticalCoreBounds = layout.rooms
+          .where((room) => room.roomType == RoomType.stairs)
+          .firstOrNull
+          ?.bounds;
     }
     return List<FloorPlan>.unmodifiable(plans);
   }
+
+  _GeneratedFloorLayout? _partitionFloor({
+    required List<RoomInstance> rooms,
+    required Rect2D footprint,
+    required int floorIndex,
+    required Site site,
+    required DeterministicRandom random,
+    required double grid,
+    required Rect2D? verticalCoreBounds,
+    required PartitionGenerator partitioner,
+  }) {
+    if (floorIndex == 0 &&
+        rooms.any((room) => room.roomType == RoomType.garage)) {
+      return _partitionGroundWithGarageWing(
+        rooms: rooms,
+        footprint: footprint,
+        floorIndex: floorIndex,
+        site: site,
+        random: random,
+        grid: grid,
+        partitioner: partitioner,
+      );
+    }
+    final outcome = partitioner.generate(
+      rooms: rooms,
+      footprint: footprint,
+      floorIndex: floorIndex,
+      random: random,
+    );
+    if (outcome == null) return null;
+    final alignedRooms = floorIndex > 0 && verticalCoreBounds != null
+        ? _alignUpperStairs(outcome.rooms, verticalCoreBounds)
+        : outcome.rooms;
+    if (alignedRooms == null) return null;
+    return _GeneratedFloorLayout(
+      rooms: alignedRooms,
+      upperSupportFootprint: footprint,
+    );
+  }
+
+  _GeneratedFloorLayout? _partitionGroundWithGarageWing({
+    required List<RoomInstance> rooms,
+    required Rect2D footprint,
+    required int floorIndex,
+    required Site site,
+    required DeterministicRandom random,
+    required double grid,
+    required PartitionGenerator partitioner,
+  }) {
+    final garages = rooms
+        .where((room) => room.roomType == RoomType.garage)
+        .toList(growable: false);
+    final interiorRooms = rooms
+        .where((room) => room.roomType != RoomType.garage)
+        .toList(growable: false);
+    if (garages.isEmpty || interiorRooms.isEmpty) return null;
+
+    final frontageRunsAlongX = switch (site.streetSide) {
+      StreetSide.north || StreetSide.south => true,
+      StreetSide.east || StreetSide.west => false,
+    };
+    final availableVehicleDepth = frontageRunsAlongX
+        ? footprint.height
+        : footprint.width;
+    final vehicleDepth = garages
+        .map((room) {
+          return ceilToGrid(math.max(room.minWidth, room.minDepth), grid: grid);
+        })
+        .fold<double>(0, math.max);
+    final targetVehicleDepth = garages
+        .map(
+          (room) => ceilToGrid(
+            math.sqrt(math.max(room.minArea, room.targetArea) * 2.2),
+            grid: grid,
+          ),
+        )
+        .fold<double>(vehicleDepth, math.max);
+    final resolvedVehicleDepth = math.max(vehicleDepth, targetVehicleDepth);
+    if (resolvedVehicleDepth > availableVehicleDepth + 1e-6) return null;
+
+    final garageFrontages = garages
+        .map((room) {
+          final minimumFrontage = math.min(room.minWidth, room.minDepth);
+          final areaFrontage =
+              math.max(room.minArea, room.targetArea) / resolvedVehicleDepth;
+          return ceilToGrid(
+            math.max(minimumFrontage, areaFrontage),
+            grid: grid,
+          );
+        })
+        .toList(growable: false);
+    final totalGarageFrontage = garageFrontages.fold<double>(
+      0,
+      (sum, frontage) => sum + frontage,
+    );
+    final fullFrontage = frontageRunsAlongX
+        ? footprint.width
+        : footprint.height;
+    if (fullFrontage - totalGarageFrontage < grid) return null;
+
+    final garageAtLowSide = random.nextBool();
+    late final Rect2D interiorFootprint;
+    if (frontageRunsAlongX) {
+      interiorFootprint = Rect2D(
+        x: garageAtLowSide
+            ? footprint.left + totalGarageFrontage
+            : footprint.left,
+        y: footprint.top,
+        width: footprint.width - totalGarageFrontage,
+        height: footprint.height,
+      );
+    } else {
+      interiorFootprint = Rect2D(
+        x: footprint.left,
+        y: garageAtLowSide
+            ? footprint.top + totalGarageFrontage
+            : footprint.top,
+        width: footprint.width,
+        height: footprint.height - totalGarageFrontage,
+      );
+    }
+    final interior = partitioner.generate(
+      rooms: interiorRooms,
+      footprint: interiorFootprint,
+      floorIndex: floorIndex,
+      random: random,
+    );
+    if (interior == null) return null;
+
+    final generatedGarages = <GeneratedRoom>[];
+    var frontageCursor = garageAtLowSide
+        ? (frontageRunsAlongX ? footprint.left : footprint.top)
+        : (frontageRunsAlongX
+              ? interiorFootprint.right
+              : interiorFootprint.bottom);
+    for (var index = 0; index < garages.length; index++) {
+      final frontage = garageFrontages[index];
+      final bounds = switch (site.streetSide) {
+        StreetSide.north => Rect2D(
+          x: frontageCursor,
+          y: footprint.top,
+          width: frontage,
+          height: resolvedVehicleDepth,
+        ),
+        StreetSide.south => Rect2D(
+          x: frontageCursor,
+          y: footprint.bottom - resolvedVehicleDepth,
+          width: frontage,
+          height: resolvedVehicleDepth,
+        ),
+        StreetSide.east => Rect2D(
+          x: footprint.right - resolvedVehicleDepth,
+          y: frontageCursor,
+          width: resolvedVehicleDepth,
+          height: frontage,
+        ),
+        StreetSide.west => Rect2D(
+          x: footprint.left,
+          y: frontageCursor,
+          width: resolvedVehicleDepth,
+          height: frontage,
+        ),
+      };
+      generatedGarages.add(
+        GeneratedRoom(
+          source: garages[index],
+          floorIndex: floorIndex,
+          bounds: bounds,
+        ),
+      );
+      frontageCursor += frontage;
+    }
+    return _GeneratedFloorLayout(
+      rooms: <GeneratedRoom>[...interior.rooms, ...generatedGarages],
+      upperSupportFootprint: interiorFootprint,
+    );
+  }
+
+  List<GeneratedRoom>? _alignUpperStairs(
+    List<GeneratedRoom> rooms,
+    Rect2D lowerStairBounds,
+  ) {
+    final stairIndex = rooms.indexWhere(
+      (room) => room.roomType == RoomType.stairs,
+    );
+    if (stairIndex < 0) return rooms;
+    final stair = rooms[stairIndex];
+    if (_overlapArea(stair.bounds, lowerStairBounds) >= 1.0) return rooms;
+
+    final candidates =
+        <int>[
+          for (var index = 0; index < rooms.length; index++)
+            if (index != stairIndex) index,
+        ]..sort(
+          (first, second) => _overlapArea(
+            rooms[second].bounds,
+            lowerStairBounds,
+          ).compareTo(_overlapArea(rooms[first].bounds, lowerStairBounds)),
+        );
+    for (final candidateIndex in candidates) {
+      final candidate = rooms[candidateIndex];
+      if (_overlapArea(candidate.bounds, lowerStairBounds) < 1.0 ||
+          !_roomFitsBounds(stair.source, candidate.bounds) ||
+          !_roomFitsBounds(candidate.source, stair.bounds)) {
+        continue;
+      }
+      final aligned = List<GeneratedRoom>.of(rooms);
+      aligned[stairIndex] = GeneratedRoom(
+        source: candidate.source,
+        floorIndex: stair.floorIndex,
+        bounds: stair.bounds,
+      );
+      aligned[candidateIndex] = GeneratedRoom(
+        source: stair.source,
+        floorIndex: candidate.floorIndex,
+        bounds: candidate.bounds,
+      );
+      return aligned;
+    }
+    return null;
+  }
+
+  bool _roomFitsBounds(RoomInstance room, Rect2D bounds) {
+    if (bounds.area + 1e-6 < room.minArea) return false;
+    final requiredShort = math.min(room.minWidth, room.minDepth);
+    final requiredLong = math.max(room.minWidth, room.minDepth);
+    final actualShort = math.min(bounds.width, bounds.height);
+    final actualLong = math.max(bounds.width, bounds.height);
+    return actualShort + 1e-6 >= requiredShort &&
+        actualLong + 1e-6 >= requiredLong;
+  }
+
+  double _overlapArea(Rect2D first, Rect2D second) =>
+      first.intersection(second)?.area ?? 0;
 
   Rect2D? _createFootprint({
     required List<RoomInstance> rooms,
@@ -271,7 +535,8 @@ class FloorPlanGenerator {
     required DeterministicRandom random,
     double minimumFootprintArea = 0,
     double targetFootprintArea = 0,
-    bool centerInEnvelope = false,
+    StreetSide? anchorToRearForStreet,
+    Rect2D? requiredBounds,
   }) {
     final roomMinimumArea = rooms.fold<double>(
       0,
@@ -317,17 +582,41 @@ class FloorPlanGenerator {
       return null;
     }
 
-    final minX = ceilToGrid(envelope.left, grid: grid);
-    final maxX = floorToGrid(envelope.right - width, grid: grid);
-    final minY = ceilToGrid(envelope.top, grid: grid);
-    final maxY = floorToGrid(envelope.bottom - height, grid: grid);
+    var minX = ceilToGrid(envelope.left, grid: grid);
+    var maxX = floorToGrid(envelope.right - width, grid: grid);
+    var minY = ceilToGrid(envelope.top, grid: grid);
+    var maxY = floorToGrid(envelope.bottom - height, grid: grid);
+    if (requiredBounds != null) {
+      minX = math.max(
+        minX,
+        ceilToGrid(requiredBounds.right - width, grid: grid),
+      );
+      maxX = math.min(maxX, floorToGrid(requiredBounds.left, grid: grid));
+      minY = math.max(
+        minY,
+        ceilToGrid(requiredBounds.bottom - height, grid: grid),
+      );
+      maxY = math.min(maxY, floorToGrid(requiredBounds.top, grid: grid));
+    }
     if (maxX < minX - 1e-6 || maxY < minY - 1e-6) return null;
-    final x = centerInEnvelope
-        ? snapToGrid((minX + maxX) / 2, grid: grid).clamp(minX, maxX)
-        : _gridChoice(minX, maxX, grid, random);
-    final y = centerInEnvelope
-        ? snapToGrid((minY + maxY) / 2, grid: grid).clamp(minY, maxY)
-        : _gridChoice(minY, maxY, grid, random);
+    var x = _gridChoice(minX, maxX, grid, random);
+    var y = _gridChoice(minY, maxY, grid, random);
+    if (anchorToRearForStreet != null) {
+      switch (anchorToRearForStreet) {
+        case StreetSide.north:
+          y = maxY;
+          x = random.nextBool() ? minX : maxX;
+        case StreetSide.south:
+          y = minY;
+          x = random.nextBool() ? minX : maxX;
+        case StreetSide.east:
+          x = minX;
+          y = random.nextBool() ? minY : maxY;
+        case StreetSide.west:
+          x = maxX;
+          y = random.nextBool() ? minY : maxY;
+      }
+    }
     return Rect2D(x: x, y: y, width: width, height: height);
   }
 
@@ -365,3 +654,13 @@ const ScoreBreakdown _emptyScore = ScoreBreakdown(
   floorPreference: 0,
   relationshipDetails: <RelationshipScoreDetail>[],
 );
+
+class _GeneratedFloorLayout {
+  const _GeneratedFloorLayout({
+    required this.rooms,
+    required this.upperSupportFootprint,
+  });
+
+  final List<GeneratedRoom> rooms;
+  final Rect2D upperSupportFootprint;
+}

@@ -15,7 +15,7 @@ This is an early generative-design foundation. It is not an AI image generator, 
 - Area-guided recursive slicing/BSP layout generation on a 0.25 m grid
 - Multiple candidates, hard validation, category scores, deduplication, and ranking
 - Candidate selection, floor switching, pan/zoom, and selectable room inspection
-- Interactive WebGL 3D with aligned floors, gabled roof, facade openings, Exterior/Cutaway modes, and synchronized selection
+- Interactive WebGL 3D with connected floor massing, an attached garage wing and driveway, gabled/flat roofs, facade openings, Exterior/Cutaway modes, and synchronized selection
 - Versioned project JSON import/export and domain-generated vector SVG export
 - Feasibility errors and generation rejection diagnostics
 
@@ -60,18 +60,19 @@ The dependency boundary is deliberate: `lib/engine` imports no Flutter libraries
 1. Validate obvious feasibility failures.
 2. Expand room counts into stable, unique room instances.
 3. Honor locked floors and heuristically balance flexible rooms.
-4. Choose a seeded ground footprint, then center every upper footprint inside the supporting floor below.
-5. Recursively split it with an explicit slicing tree. Subtree target areas guide split ratios; small seeded perturbations provide alternatives.
-6. Snap every partition to the configured 0.25 m grid.
-7. Reject missing, overlapping, out-of-bounds, undersized, off-grid, or incorrectly assigned rooms.
-8. Score relationships, proportions, street orientation, compactness, and floor preferences.
-9. Deduplicate geometry, sort by normalized 0–100 score, and retain the configured top candidates.
+4. Choose a seeded ground footprint, reserve a street-facing attached garage wing, and keep the upper floor over the habitable support zone.
+5. Anchor upper massing toward the rear/side and align its stair core with the floor below.
+6. Recursively split available rectangles with an explicit slicing tree. Subtree target areas guide split ratios; small seeded perturbations provide alternatives.
+7. Snap every partition to the configured 0.25 m grid.
+8. Reject missing, overlapping, out-of-bounds, undersized, off-grid, unsupported, inaccessible-garage, or disconnected-stair layouts.
+9. Score relationships, proportions, street orientation, compactness, and floor preferences.
+10. Deduplicate geometry, sort by normalized 0–100 score, and retain the configured top candidates.
 
 Identical requirements, settings, and seed produce identical geometry, scores, and ranking. The PRNG uses only explicit 32-bit operations so behavior is stable on both the Dart VM and JavaScript builds.
 
 ## Hard and soft constraints
 
-Hard constraints invalidate a candidate: required counts, legal bounds, no overlaps, valid geometry, minimum area/dimensions, locked floors, vertical support, maximum total area, and grid alignment.
+Hard constraints invalidate a candidate: required counts, legal bounds, no overlaps, valid geometry, minimum area/dimensions, locked floors, occupied-area vertical support, garage access from the street facade, overlapping stair cores, maximum total area, and grid alignment.
 
 Soft constraints affect rank without invalidating a design: adjacency, near/away relationships, street distance, target-area fit, proportions, footprint compactness, and flexible-floor preference. The inspector exposes both category scores and per-preference satisfaction.
 
@@ -106,9 +107,9 @@ Tests cover geometry, all street orientations, serialization roundtrips, feasibi
 ## Current limitations
 
 - Rectangular lots and rectangular slicing layouts only
-- One building rectangle per occupied floor; no corridors or circulation graph synthesis
+- Rectangular room partitions with a supported L-shaped attached-garage composition; no general free-form footprint or circulation graph synthesis
 - No furniture, structure, plumbing, sunlight, irregular boundaries, or manual wall editing
-- Roof and facade openings are heuristic preview geometry; they are not yet editable construction assemblies or circulation-aware openings in the floor-plan topology
+- Roofs, driveway, and facade openings are heuristic preview geometry; doors/windows are not yet editable wall cutouts or a complete circulation graph
 - Heuristics are not jurisdictional codes or professional architectural review
 - Generation runs bounded on the browser event loop; the engine boundary is ready for a future Web Worker executor
 - Hill-climbing genome mutation is not yet enabled; the current search uses independent seeded slicing candidates

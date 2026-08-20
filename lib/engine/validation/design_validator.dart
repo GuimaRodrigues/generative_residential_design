@@ -5,6 +5,8 @@ import '../../domain/constraints/constraint.dart';
 import '../../domain/design/design_candidate.dart';
 import '../../domain/requirements/design_requirements.dart';
 import '../../domain/requirements/room_requirement.dart';
+import '../../domain/requirements/room_type.dart';
+import '../../domain/site/site.dart';
 
 class DesignValidator {
   const DesignValidator({this.gridSize = defaultGridSize});
@@ -126,14 +128,96 @@ class DesignValidator {
       final lowerFloors = candidate.floors.where(
         (floor) => floor.floorIndex == upperFloor.floorIndex - 1,
       );
-      final lowerFootprint = lowerFloors.isEmpty
-          ? null
-          : lowerFloors.first.footprint;
-      if (lowerFootprint == null ||
-          !lowerFootprint.containsRect(upperFloor.footprint!)) {
+      final supportedArea = lowerFloors.isEmpty
+          ? 0.0
+          : lowerFloors.first.rooms.fold<double>(
+              0,
+              (sum, room) =>
+                  sum +
+                  (room.bounds.intersection(upperFloor.footprint!)?.area ?? 0),
+            );
+      if ((supportedArea - upperFloor.footprint!.area).abs() > 1e-6) {
         add(
           HardConstraintType.verticalSupport,
           'Floor ${upperFloor.floorIndex + 1} is not supported by the floor below.',
+        );
+      }
+    }
+    for (final garage in actual.where(
+      (room) => room.roomType == RoomType.garage,
+    )) {
+      final groundFloors = candidate.floors.where(
+        (floor) => floor.floorIndex == 0,
+      );
+      final groundFootprint = groundFloors.isEmpty
+          ? null
+          : groundFloors.first.footprint;
+      final minimumFrontage = math.min(
+        garage.source.minWidth,
+        garage.source.minDepth,
+      );
+      final streetFrontage = groundFootprint == null
+          ? 0.0
+          : switch (requirements.site.streetSide) {
+              StreetSide.north
+                  when approximatelyEqual(
+                    garage.bounds.top,
+                    groundFootprint.top,
+                  ) =>
+                garage.bounds.width,
+              StreetSide.south
+                  when approximatelyEqual(
+                    garage.bounds.bottom,
+                    groundFootprint.bottom,
+                  ) =>
+                garage.bounds.width,
+              StreetSide.east
+                  when approximatelyEqual(
+                    garage.bounds.right,
+                    groundFootprint.right,
+                  ) =>
+                garage.bounds.height,
+              StreetSide.west
+                  when approximatelyEqual(
+                    garage.bounds.left,
+                    groundFootprint.left,
+                  ) =>
+                garage.bounds.height,
+              _ => 0.0,
+            };
+      if (garage.floorIndex != 0 || streetFrontage + 1e-6 < minimumFrontage) {
+        add(
+          HardConstraintType.garageStreetAccess,
+          '${garage.id} must be on the ground-floor street facade with vehicle access.',
+        );
+      }
+    }
+    for (final upperFloor in candidate.floors.where(
+      (floor) => floor.floorIndex > 0 && floor.rooms.isNotEmpty,
+    )) {
+      final lowerFloors = candidate.floors.where(
+        (floor) => floor.floorIndex == upperFloor.floorIndex - 1,
+      );
+      if (lowerFloors.isEmpty) continue;
+      final lowerStairs = lowerFloors.first.rooms.where(
+        (room) => room.roomType == RoomType.stairs,
+      );
+      final upperStairs = upperFloor.rooms.where(
+        (room) => room.roomType == RoomType.stairs,
+      );
+      if (lowerStairs.isEmpty || upperStairs.isEmpty) continue;
+      final connected = upperStairs.every(
+        (upperStair) => lowerStairs.any(
+          (lowerStair) =>
+              (upperStair.bounds.intersection(lowerStair.bounds)?.area ?? 0) >=
+              1.0,
+        ),
+      );
+      if (!connected) {
+        add(
+          HardConstraintType.verticalCirculation,
+          'Stairs between floors ${upperFloor.floorIndex} and '
+          '${upperFloor.floorIndex + 1} must overlap vertically.',
         );
       }
     }

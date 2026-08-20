@@ -181,6 +181,7 @@ class FormaViewer {
     this.pickableRooms = [];
     this._buildSite();
     for (const level of this.data.levels) this._buildLevel(level);
+    if (this.data.display?.mode !== 'cutaway') this._buildLowerRoofs();
     if (this.data.roof) this._buildRoof(this.data.roof);
   }
 
@@ -261,9 +262,12 @@ class FormaViewer {
     const group = new THREE.Group();
     group.name = `level-${level.floorIndex}`;
     this.modelRoot.add(group);
-    if (level.footprint) {
+    for (const space of level.spaces) {
+      const stairOpening =
+        level.floorIndex > 0 && space.roomType === 'stairs';
+      if (stairOpening) continue;
       const slab = this._boxFromBounds(
-        level.footprint,
+        space.bounds,
         level.slabThickness,
         0xd3d8d4,
         opacity,
@@ -273,23 +277,27 @@ class FormaViewer {
       group.add(slab);
     }
     for (const space of level.spaces) {
+      const stairOpening =
+        level.floorIndex > 0 && space.roomType === 'stairs';
       const selected =
         !exteriorMode && space.id === this.data.selection.roomId;
       const color = selected
         ? 0xc96d49
         : (roomColors[space.roomType] ?? 0xcbd5cf);
-      const floor = this._boxFromBounds(
-        space.bounds,
-        0.055,
-        color,
-        exteriorMode ? 1 : active ? 0.98 : 0.1,
-      );
-      floor.position.y = level.elevation + 0.028;
-      floor.userData.roomId = space.id;
-      floor.userData.floorIndex = level.floorIndex;
-      floor.receiveShadow = true;
-      if (!exteriorMode && active) this.pickableRooms.push(floor);
-      group.add(floor);
+      if (!stairOpening) {
+        const floor = this._boxFromBounds(
+          space.bounds,
+          0.055,
+          color,
+          exteriorMode ? 1 : active ? 0.98 : 0.1,
+        );
+        floor.position.y = level.elevation + 0.028;
+        floor.userData.roomId = space.id;
+        floor.userData.floorIndex = level.floorIndex;
+        floor.receiveShadow = true;
+        if (!exteriorMode && active) this.pickableRooms.push(floor);
+        group.add(floor);
+      }
       if (!exteriorMode && active) {
         const label = this._makeLabel(space.label, selected);
         label.position.set(
@@ -375,7 +383,102 @@ class FormaViewer {
       );
       panel.add(frame);
       group.add(panel);
+      if (opening.kind === 'garageDoor') {
+        this._buildDriveway(panel.position.x, panel.position.z, opening.width, group);
+      }
     }
+  }
+
+  _buildLowerRoofs() {
+    const ground = this.data.levels.find((level) => level.floorIndex === 0);
+    const upper = this.data.levels.find((level) => level.floorIndex === 1);
+    if (!ground || !upper?.footprint) return;
+    for (const space of ground.spaces) {
+      for (const exposed of this._subtractBounds(
+        space.bounds,
+        upper.footprint,
+      )) {
+        const roof = this._boxFromBounds(exposed, 0.14, 0x59676a, 1);
+        roof.position.y =
+          ground.elevation + this.data.dimensions.wallHeight + 0.07;
+        roof.castShadow = true;
+        roof.receiveShadow = true;
+        this.modelRoot.add(roof);
+      }
+    }
+  }
+
+  _subtractBounds(bounds, cut) {
+    const left = Math.max(bounds.x, cut.x);
+    const top = Math.max(bounds.y, cut.y);
+    const right = Math.min(bounds.x + bounds.width, cut.x + cut.width);
+    const bottom = Math.min(bounds.y + bounds.height, cut.y + cut.height);
+    if (right - left <= 1e-6 || bottom - top <= 1e-6) return [bounds];
+    const parts = [
+      {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: top - bounds.y,
+      },
+      {
+        x: bounds.x,
+        y: bottom,
+        width: bounds.width,
+        height: bounds.y + bounds.height - bottom,
+      },
+      { x: bounds.x, y: top, width: left - bounds.x, height: bottom - top },
+      {
+        x: right,
+        y: top,
+        width: bounds.x + bounds.width - right,
+        height: bottom - top,
+      },
+    ];
+    return parts.filter((part) => part.width > 1e-6 && part.height > 1e-6);
+  }
+
+  _buildDriveway(centerX, centerZ, doorWidth, group) {
+    const site = this.data.site;
+    const margin = 0.28;
+    let bounds;
+    switch (site.streetSide) {
+      case 'south':
+        bounds = {
+          x: centerX - doorWidth / 2 - margin,
+          y: centerZ,
+          width: doorWidth + margin * 2,
+          height: Math.max(site.depth - centerZ, 0.1),
+        };
+        break;
+      case 'east':
+        bounds = {
+          x: centerX,
+          y: centerZ - doorWidth / 2 - margin,
+          width: Math.max(site.width - centerX, 0.1),
+          height: doorWidth + margin * 2,
+        };
+        break;
+      case 'west':
+        bounds = {
+          x: 0,
+          y: centerZ - doorWidth / 2 - margin,
+          width: Math.max(centerX, 0.1),
+          height: doorWidth + margin * 2,
+        };
+        break;
+      default:
+        bounds = {
+          x: centerX - doorWidth / 2 - margin,
+          y: 0,
+          width: doorWidth + margin * 2,
+          height: Math.max(centerZ, 0.1),
+        };
+    }
+    const driveway = this._boxFromBounds(bounds, 0.065, 0xb9bcb8, 1);
+    driveway.position.y = -0.145;
+    driveway.receiveShadow = true;
+    group.add(driveway);
   }
 
   _buildRoof(roof) {

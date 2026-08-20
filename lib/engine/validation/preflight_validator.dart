@@ -35,6 +35,10 @@ class PreflightValidator {
           '${room.roomType.displayName} is locked to an unavailable upper floor.',
         );
       }
+      if (room.roomType == RoomType.garage &&
+          room.preferredFloor == PreferredFloor.upper) {
+        errors.add('Garage must be assigned to the ground floor.');
+      }
     }
     if (errors.isNotEmpty) return errors;
 

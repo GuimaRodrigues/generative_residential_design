@@ -497,12 +497,6 @@ class FloorPlanPainter extends CustomPainter {
     );
     _drawStreet(canvas, transform, lot);
 
-    if (floorPlan.footprint case final footprint?) {
-      canvas.drawRect(
-        transform.rect(footprint),
-        Paint()..color = const Color(0xFFE1E7E3),
-      );
-    }
     for (final room in floorPlan.rooms) {
       final bounds = transform.rect(room.bounds);
       final selected = room.id == selectedRoomId;

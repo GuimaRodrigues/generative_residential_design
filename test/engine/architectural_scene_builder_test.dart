@@ -108,13 +108,18 @@ void main() {
     expect(scene.levels, hasLength(2));
     expect(scene.levels[0].elevation, 0);
     expect(scene.levels[1].elevation, 3.1);
-    expect(scene.roof!.baseElevation, closeTo(5.9, 1e-9));
+    expect(
+      scene.dimensions.wallHeight + scene.dimensions.slabThickness,
+      closeTo(scene.dimensions.floorToFloorHeight, 1e-9),
+      reason: 'walls must meet the underside of the next slab without a gap',
+    );
+    expect(scene.roof!.baseElevation, closeTo(6.02, 1e-9));
     expect(scene.roof!.ridgeHeight, greaterThan(1));
     expect(scene.levels.expand((level) => level.spaces), hasLength(2));
     expect(
       scene.levels
           .expand((level) => level.walls)
-          .every((wall) => wall.length > 0 && wall.height == 2.8),
+          .every((wall) => wall.length > 0 && wall.height == 2.92),
       isTrue,
     );
     final json = scene.toJson(
@@ -128,6 +133,41 @@ void main() {
       'roomId': 'upper-room',
     });
     expect(json['display'], <String, Object>{'mode': 'cutaway'});
+  });
+
+  test('places a vehicle opening on a street-facing garage wall', () {
+    final scene = const ArchitecturalSceneBuilder().build(
+      candidate: _candidate(<FloorPlan>[
+        FloorPlan(
+          floorIndex: 0,
+          footprint: const Rect2D(x: 1, y: 1, width: 8, height: 6),
+          rooms: <GeneratedRoom>[
+            _room(
+              id: 'garage',
+              type: RoomType.garage,
+              floor: 0,
+              bounds: const Rect2D(x: 1, y: 1, width: 3, height: 6),
+            ),
+            _room(
+              id: 'living',
+              type: RoomType.livingRoom,
+              floor: 0,
+              bounds: const Rect2D(x: 4, y: 1, width: 5, height: 6),
+            ),
+          ],
+        ),
+      ]),
+      site: site,
+    );
+
+    final garageDoor = scene.levels.single.openings.singleWhere(
+      (opening) => opening.kind == ArchitecturalOpeningKind.garageDoor,
+    );
+    final wall = scene.levels.single.walls.singleWhere(
+      (wall) => wall.id == garageDoor.wallId,
+    );
+    expect(wall.start.y, 1);
+    expect(garageDoor.width, greaterThanOrEqualTo(2.4));
   });
 
   test('2D and 3D modes share floor and room selection state', () async {

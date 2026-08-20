@@ -19,6 +19,8 @@ enum HardConstraintType {
   gridAlignment,
   maximumTotalArea,
   verticalSupport,
+  garageStreetAccess,
+  verticalCirculation,
 }
 
 class HardConstraint extends DesignConstraint {

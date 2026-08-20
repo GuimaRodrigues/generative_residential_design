@@ -32,7 +32,7 @@ The domain contains immutable sites, project metadata, room requirements, normal
 ### Engine
 
 - `PreflightValidator` rejects impossible briefs before search.
-- `FloorPlanGenerator` owns the bounded deterministic candidate loop and ranking.
+- `FloorPlanGenerator` owns the bounded deterministic candidate loop and ranking, including the street-facing garage annex, supported upper massing, and aligned stair-core heuristics.
 - `PartitionGenerator` builds explicit `RoomLeaf`/`SplitNode` slicing trees while assigning snapped geometry.
 - `DesignValidator` evaluates all MVP hard invariants.
 - `DesignScorer` evaluates isolated scoring categories and per-relationship details.
@@ -53,16 +53,17 @@ Pan/zoom transformation state stays local to the canvas widget because it is hig
 
 ### Presentation
 
-The desktop workspace contains a requirements panel, a large `CustomPainter` plan canvas, and a ranked candidate/diagnostics panel. `FloorPlanPainter` computes a viewport transform from site meters to canvas pixels on every paint. Site, setback envelope, street edge, footprint, rooms, dimensions, and selection are rendered from domain geometry.
+The desktop workspace contains a requirements panel, a large `CustomPainter` plan canvas, and a ranked candidate/diagnostics panel. `FloorPlanPainter` computes a viewport transform from site meters to canvas pixels on every paint. Site, setback envelope, street edge, occupied room union, dimensions, and selection are rendered from domain geometry; this allows the attached garage composition to read as an L-shaped ground floor.
 
 The 3D path uses the same candidate and selection state. A pure Dart
 `ArchitecturalScene3D` is serialized through a conditional Flutter Web platform
 view into a small JavaScript adapter. Three.js and OrbitControls are pinned and
 vendored locally; they are presentation dependencies and do not enter the
-domain or generation engine. Exterior mode renders the complete stacked mass,
-roof, and facade markers; Cutaway mode fades non-selected levels and preserves
-ray-cast room inspection. The adapter owns WebGL lifecycle, camera controls,
-resize handling, and GPU-resource disposal.
+domain or generation engine. Exterior mode renders continuous stacked walls and
+slabs, a gabled main roof, flat roofs over exposed lower volumes, facade markers, and the garage
+driveway; Cutaway mode fades non-selected levels, exposes the aligned stair
+opening, and preserves ray-cast room inspection. The adapter owns WebGL
+lifecycle, camera controls, resize handling, and GPU-resource disposal.
 
 ## Persistence boundary
 

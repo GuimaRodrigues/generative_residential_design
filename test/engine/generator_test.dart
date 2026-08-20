@@ -6,6 +6,8 @@ import 'package:generative_residential_design/domain/design/design_candidate.dar
 import 'package:generative_residential_design/domain/design/floor_plan.dart';
 import 'package:generative_residential_design/domain/project/sample_project.dart';
 import 'package:generative_residential_design/domain/requirements/room_requirement.dart';
+import 'package:generative_residential_design/domain/requirements/room_type.dart';
+import 'package:generative_residential_design/domain/site/site.dart';
 import 'package:generative_residential_design/engine/generation/floor_plan_generator.dart';
 import 'package:generative_residential_design/engine/generation/generation_config.dart';
 import 'package:generative_residential_design/engine/validation/design_validator.dart';
@@ -43,13 +45,71 @@ void main() {
       expect(candidate.score.overall, inInclusiveRange(0, 100));
       if (candidate.floors.length == 2 &&
           candidate.floors[1].footprint != null) {
+        final ground = candidate.floors[0];
+        final upper = candidate.floors[1];
         expect(
-          candidate.floors[0].footprint!.containsRect(
-            candidate.floors[1].footprint!,
-          ),
+          ground.footprint!.containsRect(upper.footprint!),
           isTrue,
           reason: 'upper floor must be supported by the ground floor',
         );
+        final garages = ground.rooms.where(
+          (room) => room.roomType == RoomType.garage,
+        );
+        for (final garage in garages) {
+          expect(garage.floorIndex, 0);
+          expect(
+            garage.bounds.intersection(upper.footprint!),
+            isNull,
+            reason: 'the garage must remain a distinct one-story wing',
+          );
+          final frontage = switch (project.requirements.site.streetSide) {
+            StreetSide.north =>
+              (garage.bounds.top - ground.footprint!.top).abs() < 1e-6
+                  ? garage.bounds.width
+                  : 0.0,
+            StreetSide.south =>
+              (garage.bounds.bottom - ground.footprint!.bottom).abs() < 1e-6
+                  ? garage.bounds.width
+                  : 0.0,
+            StreetSide.east =>
+              (garage.bounds.right - ground.footprint!.right).abs() < 1e-6
+                  ? garage.bounds.height
+                  : 0.0,
+            StreetSide.west =>
+              (garage.bounds.left - ground.footprint!.left).abs() < 1e-6
+                  ? garage.bounds.height
+                  : 0.0,
+          };
+          expect(
+            frontage,
+            greaterThanOrEqualTo(
+              garage.source.minWidth < garage.source.minDepth
+                  ? garage.source.minWidth
+                  : garage.source.minDepth,
+            ),
+            reason: 'the garage must have vehicle frontage on the street',
+          );
+        }
+        final lowerStairs = ground.rooms.where(
+          (room) => room.roomType == RoomType.stairs,
+        );
+        final upperStairs = upper.rooms.where(
+          (room) => room.roomType == RoomType.stairs,
+        );
+        if (lowerStairs.isNotEmpty && upperStairs.isNotEmpty) {
+          expect(
+            upperStairs.every(
+              (upperStair) => lowerStairs.any(
+                (lowerStair) =>
+                    (upperStair.bounds.intersection(lowerStair.bounds)?.area ??
+                        0) >=
+                    1,
+              ),
+            ),
+            isTrue,
+            reason: 'stairs must connect the two floors vertically',
+          );
+        }
       }
       for (final room in candidate.rooms) {
         expect(
@@ -133,6 +193,28 @@ void main() {
     expect(result.candidates, isEmpty);
     expect(result.diagnostics.attempted, 0);
     expect(result.feasibilityErrors.join(' '), contains('minimum room area'));
+  });
+
+  test('garage locked upstairs fails before generation', () {
+    final project = createSampleProject();
+    final rooms = project.requirements.rooms
+        .map(
+          (room) => room.roomType == RoomType.garage
+              ? room.copyWith(preferredFloor: PreferredFloor.upper)
+              : room,
+        )
+        .toList(growable: false);
+    final result = generator.generate(
+      requirements: project.requirements.copyWith(rooms: rooms),
+      config: config,
+      seed: project.seed,
+    );
+
+    expect(result.diagnostics.attempted, 0);
+    expect(
+      result.feasibilityErrors,
+      contains('Garage must be assigned to the ground floor.'),
+    );
   });
 
   test('generated candidates preserve invariants across many seeds', () {

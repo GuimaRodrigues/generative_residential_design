@@ -14,9 +14,11 @@ Ground/upper locks are placed first. For a two-floor project, `any` rooms are sh
 
 ## 4. Footprint selection
 
-The ground floor receives a rectangle entirely inside the buildable envelope. Its desired area is based on summed room targets with a small seeded variation and is also large enough to support the minimum/target area needed above. Width is sampled from a feasible range; height is derived from area.
+The ground floor starts from a rectangle entirely inside the buildable envelope. Its desired area is based on summed room targets with a small seeded variation and is also large enough to support the minimum/target area needed above. Width is sampled from a feasible range; height is derived from area.
 
-Every upper footprint is generated inside and centered on the supporting footprint below. Floors may still have different areas, producing intentional terraces or setbacks, but an upper floor can no longer float beside or outside the ground floor. Dimensions and locations stay on the global generation grid.
+When a garage is requested, it is reserved as a front-corner annex with a vehicle-oriented aspect, minimum street frontage, and direct contact with the configured street facade. The remaining full-depth rectangle becomes the habitable support zone, producing an L-shaped occupied ground floor rather than treating the garage as an arbitrary interior leaf.
+
+Every upper footprint is generated inside that habitable support zone and anchored toward a rear/side edge, avoiding a visually floating centered box and leaving the garage as a one-story wing. Its placement must contain the lower stair core. After partitioning, compatible room assignments are exchanged deterministically when necessary so upper and lower stair rectangles overlap by a meaningful area. Dimensions and locations stay on the global generation grid.
 
 ## 5. Slicing tree and partitioning
 
@@ -53,7 +55,9 @@ The validator checks:
 - no positive-area room overlap on a floor
 - minimum room area and rotatable minimum dimensions
 - locked floor assignments
-- every occupied upper footprint contained by the supporting floor below
+- every occupied upper footprint covered by actual occupied room area below
+- each garage on the ground-floor street facade with sufficient vehicle frontage
+- vertically overlapping stair cores when stairs exist on adjacent floors
 - global grid alignment
 - optional maximum total area
 

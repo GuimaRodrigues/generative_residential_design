@@ -14,7 +14,7 @@ enum Scene3DDisplayMode { exterior, cutaway }
 class ArchitecturalDimensions {
   const ArchitecturalDimensions({
     this.floorToFloorHeight = 3.1,
-    this.wallHeight = 2.8,
+    this.wallHeight = 2.92,
     this.exteriorWallThickness = 0.18,
     this.interiorWallThickness = 0.12,
     this.slabThickness = 0.18,
