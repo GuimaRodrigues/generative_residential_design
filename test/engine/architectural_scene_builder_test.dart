@@ -133,6 +133,14 @@ void main() {
       'roomId': 'upper-room',
     });
     expect(json['display'], <String, Object>{'mode': 'cutaway'});
+    expect(json['appearance'], <String, Object>{
+      'exteriorStyle': scene.appearance.exteriorStyle.name,
+      'facadeVariant': scene.appearance.facadeVariant,
+    });
+    expect(
+      (json['roof']! as Map<String, Object>)['kind'],
+      scene.roof!.kind.name,
+    );
   });
 
   test('places a vehicle opening on a street-facing garage wall', () {
@@ -168,6 +176,50 @@ void main() {
     );
     expect(wall.start.y, 1);
     expect(garageDoor.width, greaterThanOrEqualTo(2.4));
+  });
+
+  test('seed and attempt deterministically vary exterior appearance', () {
+    final floors = <FloorPlan>[
+      FloorPlan(
+        floorIndex: 0,
+        footprint: const Rect2D(x: 1, y: 1, width: 8, height: 6),
+        rooms: <GeneratedRoom>[
+          _room(
+            id: 'living',
+            type: RoomType.livingRoom,
+            floor: 0,
+            bounds: const Rect2D(x: 1, y: 1, width: 8, height: 6),
+          ),
+        ],
+      ),
+    ];
+    final scenes = <ArchitecturalScene3D>[
+      for (var seed = 1; seed <= 24; seed++)
+        const ArchitecturalSceneBuilder().build(
+          candidate: _candidate(floors, seed: seed, attempt: seed % 5),
+          site: site,
+        ),
+    ];
+
+    expect(
+      scenes.map((scene) => scene.appearance.exteriorStyle).toSet().length,
+      greaterThanOrEqualTo(3),
+    );
+    expect(
+      scenes.map((scene) => scene.roof!.kind).toSet(),
+      containsAll(ArchitecturalRoofKind.values),
+    );
+    final first = const ArchitecturalSceneBuilder().build(
+      candidate: _candidate(floors, seed: 98231, attempt: 7),
+      site: site,
+    );
+    final replay = const ArchitecturalSceneBuilder().build(
+      candidate: _candidate(floors, seed: 98231, attempt: 7),
+      site: site,
+    );
+    expect(replay.appearance.exteriorStyle, first.appearance.exteriorStyle);
+    expect(replay.appearance.facadeVariant, first.appearance.facadeVariant);
+    expect(replay.roof!.kind, first.roof!.kind);
   });
 
   test('2D and 3D modes share floor and room selection state', () async {
@@ -207,10 +259,14 @@ GeneratedRoom _room({
   bounds: bounds,
 );
 
-DesignCandidate _candidate(List<FloorPlan> floors) => DesignCandidate(
+DesignCandidate _candidate(
+  List<FloorPlan> floors, {
+  int seed = 1,
+  int attempt = 0,
+}) => DesignCandidate(
   id: 'scene-test',
-  seed: 1,
-  attempt: 0,
+  seed: seed,
+  attempt: attempt,
   floors: floors,
   score: const ScoreBreakdown(
     overall: 0,

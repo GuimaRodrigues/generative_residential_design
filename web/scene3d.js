@@ -17,6 +17,74 @@ const roomColors = {
   hallway: 0xded7c4,
   closet: 0xd7d8cd,
 };
+const urbanContext = { sidewalkWidth: 1.8, roadWidth: 5.6, margin: 8 };
+const exteriorPalettes = {
+  lightMinimal: {
+    sky: 0xe7edeb,
+    wall: 0xf3f1eb,
+    interiorWall: 0xd9d8d2,
+    accent: 0xb57852,
+    roof: 0x3f5053,
+    lowerRoof: 0x59686b,
+    glass: 0x315b63,
+    windowFrame: 0xdee2df,
+    door: 0xa36b48,
+    garageDoor: 0x4e595c,
+    lawn: 0x9dac8e,
+    paving: 0xc7c4ba,
+  },
+  warmModern: {
+    sky: 0xeeeae3,
+    wall: 0xe7dfd1,
+    interiorWall: 0xd4cec3,
+    accent: 0x8e5b3e,
+    roof: 0x403c39,
+    lowerRoof: 0x57514c,
+    glass: 0x294a51,
+    windowFrame: 0x302f2d,
+    door: 0x76503d,
+    garageDoor: 0x514e49,
+    lawn: 0xa2aa86,
+    paving: 0xc8bfae,
+  },
+  graphiteModern: {
+    sky: 0xe5e9e9,
+    wall: 0xd7d9d6,
+    interiorWall: 0xc8cbc8,
+    accent: 0x4d5c5f,
+    roof: 0x252f32,
+    lowerRoof: 0x343f42,
+    glass: 0x183b43,
+    windowFrame: 0x252d2f,
+    door: 0x9a6748,
+    garageDoor: 0x343c3e,
+    lawn: 0x879b81,
+    paving: 0xb8bab6,
+  },
+  coastalModern: {
+    sky: 0xe5eff0,
+    wall: 0xeee8dc,
+    interiorWall: 0xd7d3ca,
+    accent: 0x5d8582,
+    roof: 0x617477,
+    lowerRoof: 0x708184,
+    glass: 0x2f626a,
+    windowFrame: 0xf0eee8,
+    door: 0x9c704f,
+    garageDoor: 0x657174,
+    lawn: 0x99ad91,
+    paving: 0xd0cbc0,
+  },
+};
+
+function switchStreetDirection(streetSide) {
+  switch (streetSide) {
+    case 'south': return { x: 0, z: 1 };
+    case 'east': return { x: 1, z: 0 };
+    case 'west': return { x: -1, z: 0 };
+    default: return { x: 0, z: -1 };
+  }
+}
 
 class FormaViewer {
   constructor(container, data, onRoomSelected) {
@@ -26,6 +94,7 @@ class FormaViewer {
     this.pickableRooms = [];
     this.pointerStart = null;
     this.disposed = false;
+    this.palette = this._paletteFor(data);
 
     Object.assign(container.style, {
       width: '100%',
@@ -38,8 +107,8 @@ class FormaViewer {
     });
 
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0xeceeea);
-    this.scene.fog = new THREE.FogExp2(0xeceeea, 0.006);
+    this.scene.background = new THREE.Color(this.palette.sky);
+    this.scene.fog = new THREE.FogExp2(this.palette.sky, 0.0045);
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.05, 1000);
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -78,7 +147,15 @@ class FormaViewer {
 
   update(data) {
     this.data = data;
+    this.palette = this._paletteFor(data);
+    this.scene.background.setHex(this.palette.sky);
+    this.scene.fog.color.setHex(this.palette.sky);
     this._rebuild();
+  }
+
+  _paletteFor(data) {
+    return exteriorPalettes[data.appearance?.exteriorStyle] ??
+      exteriorPalettes.lightMinimal;
   }
 
   resetCamera() {
@@ -96,12 +173,26 @@ class FormaViewer {
     const buildingHeight =
       Math.max(levels.length - 1, 0) * dimensions.floorToFloorHeight +
       dimensions.wallHeight;
+    const outward = switchStreetDirection(site.streetSide);
+    const tangent = { x: outward.z, z: -outward.x };
+    const distance = maximum * 1.48 + urbanContext.sidewalkWidth +
+      urbanContext.roadWidth * 0.55;
+    const lateral = maximum * 0.65;
+    const cameraHeight = buildingHeight + maximum * 0.82;
+    const distanceToStreet = outward.x === 0
+      ? (outward.z > 0 ? site.depth - centerZ : centerZ)
+      : (outward.x > 0 ? site.width - centerX : centerX);
+    const targetShift = distanceToStreet + urbanContext.sidewalkWidth * 0.55;
     this.camera.position.set(
-      centerX + maximum * 1.05,
-      buildingHeight + maximum * 0.78,
-      centerZ + maximum * 1.12,
+      centerX + outward.x * (targetShift + distance) + tangent.x * lateral,
+      cameraHeight,
+      centerZ + outward.z * (targetShift + distance) + tangent.z * lateral,
     );
-    this.controls.target.set(centerX, buildingHeight * 0.32, centerZ);
+    this.controls.target.set(
+      centerX + outward.x * targetShift,
+      buildingHeight * 0.29,
+      centerZ + outward.z * targetShift,
+    );
     this.controls.update();
   }
 
@@ -187,20 +278,28 @@ class FormaViewer {
 
   _buildSite() {
     const site = this.data.site;
+    const exteriorMode = this.data.display?.mode !== 'cutaway';
     const ground = new THREE.Mesh(
       new THREE.PlaneGeometry(site.width, site.depth),
-      new THREE.MeshStandardMaterial({ color: 0xf8faf6, roughness: 0.96 }),
+      new THREE.MeshStandardMaterial({
+        color: exteriorMode ? this.palette.lawn : 0xf8faf6,
+        roughness: 0.98,
+      }),
     );
     ground.rotation.x = -Math.PI / 2;
     ground.position.set(site.width / 2, -0.21, site.depth / 2);
     ground.receiveShadow = true;
     this.modelRoot.add(ground);
-    this.modelRoot.add(this._rectangleLine(site.bounds, -0.195, 0x536367));
-    this.modelRoot.add(
-      this._rectangleLine(site.buildableEnvelope, -0.185, 0x89989a, true),
-    );
-    this._buildGrid(site);
-    this._buildStreet(site);
+    if (exteriorMode) {
+      this._buildUrbanContext(site);
+    } else {
+      this.modelRoot.add(this._rectangleLine(site.bounds, -0.195, 0x536367));
+      this.modelRoot.add(
+        this._rectangleLine(site.buildableEnvelope, -0.185, 0x89989a, true),
+      );
+      this._buildGrid(site);
+      this._buildStreet(site);
+    }
   }
 
   _buildGrid(site) {
@@ -223,6 +322,138 @@ class FormaViewer {
         }),
       ),
     );
+  }
+
+  _buildUrbanContext(site) {
+    const { sidewalkWidth, roadWidth, margin } = urbanContext;
+    let sidewalk;
+    let road;
+    let curb;
+    let roadCenter;
+    let horizontalRoad;
+    switch (site.streetSide) {
+      case 'south':
+        sidewalk = {
+          x: -margin,
+          y: site.depth,
+          width: site.width + margin * 2,
+          height: sidewalkWidth,
+        };
+        curb = {
+          x: -margin,
+          y: site.depth + sidewalkWidth - 0.08,
+          width: site.width + margin * 2,
+          height: 0.16,
+        };
+        road = {
+          x: -margin,
+          y: site.depth + sidewalkWidth,
+          width: site.width + margin * 2,
+          height: roadWidth,
+        };
+        roadCenter = site.depth + sidewalkWidth + roadWidth / 2;
+        horizontalRoad = true;
+        break;
+      case 'east':
+        sidewalk = {
+          x: site.width,
+          y: -margin,
+          width: sidewalkWidth,
+          height: site.depth + margin * 2,
+        };
+        curb = {
+          x: site.width + sidewalkWidth - 0.08,
+          y: -margin,
+          width: 0.16,
+          height: site.depth + margin * 2,
+        };
+        road = {
+          x: site.width + sidewalkWidth,
+          y: -margin,
+          width: roadWidth,
+          height: site.depth + margin * 2,
+        };
+        roadCenter = site.width + sidewalkWidth + roadWidth / 2;
+        horizontalRoad = false;
+        break;
+      case 'west':
+        sidewalk = {
+          x: -sidewalkWidth,
+          y: -margin,
+          width: sidewalkWidth,
+          height: site.depth + margin * 2,
+        };
+        curb = {
+          x: -sidewalkWidth - 0.08,
+          y: -margin,
+          width: 0.16,
+          height: site.depth + margin * 2,
+        };
+        road = {
+          x: -sidewalkWidth - roadWidth,
+          y: -margin,
+          width: roadWidth,
+          height: site.depth + margin * 2,
+        };
+        roadCenter = -sidewalkWidth - roadWidth / 2;
+        horizontalRoad = false;
+        break;
+      default:
+        sidewalk = {
+          x: -margin,
+          y: -sidewalkWidth,
+          width: site.width + margin * 2,
+          height: sidewalkWidth,
+        };
+        curb = {
+          x: -margin,
+          y: -sidewalkWidth - 0.08,
+          width: site.width + margin * 2,
+          height: 0.16,
+        };
+        road = {
+          x: -margin,
+          y: -sidewalkWidth - roadWidth,
+          width: site.width + margin * 2,
+          height: roadWidth,
+        };
+        roadCenter = -sidewalkWidth - roadWidth / 2;
+        horizontalRoad = true;
+    }
+    const sidewalkMesh = this._boxFromBounds(
+      sidewalk,
+      0.12,
+      this.palette.paving,
+      1,
+    );
+    sidewalkMesh.position.y = -0.15;
+    sidewalkMesh.receiveShadow = true;
+    this.modelRoot.add(sidewalkMesh);
+    const roadMesh = this._boxFromBounds(road, 0.08, 0x3f4445, 1);
+    roadMesh.position.y = -0.19;
+    roadMesh.receiveShadow = true;
+    this.modelRoot.add(roadMesh);
+    const curbMesh = this._boxFromBounds(curb, 0.17, 0xd4d2cb, 1);
+    curbMesh.position.y = -0.105;
+    curbMesh.castShadow = true;
+    curbMesh.receiveShadow = true;
+    this.modelRoot.add(curbMesh);
+    this._buildRoadMarkings(site, roadCenter, horizontalRoad);
+  }
+
+  _buildRoadMarkings(site, roadCenter, horizontalRoad) {
+    const start = -urbanContext.margin;
+    const end = (horizontalRoad ? site.width : site.depth) +
+      urbanContext.margin;
+    for (let cursor = start; cursor < end; cursor += 3.8) {
+      const length = Math.min(2.1, end - cursor);
+      const bounds = horizontalRoad
+        ? { x: cursor, y: roadCenter - 0.035, width: length, height: 0.07 }
+        : { x: roadCenter - 0.035, y: cursor, width: 0.07, height: length };
+      const marking = this._boxFromBounds(bounds, 0.018, 0xd8bd68, 1);
+      marking.position.y = -0.14;
+      this.modelRoot.add(marking);
+    }
   }
 
   _buildStreet(site) {
@@ -323,7 +554,9 @@ class FormaViewer {
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(length, wall.height, wall.thickness),
       new THREE.MeshStandardMaterial({
-        color: wall.kind === 'exterior' ? 0xeee9df : 0xd8d7d2,
+        color: wall.kind === 'exterior'
+          ? this.palette.wall
+          : this.palette.interiorWall,
         roughness: 0.82,
         transparent: opacity < 1,
         opacity,
@@ -356,10 +589,10 @@ class FormaViewer {
         ? new THREE.BoxGeometry(opening.width, opening.height, depth)
         : new THREE.BoxGeometry(depth, opening.height, opening.width);
       const color = opening.kind === 'window'
-        ? 0x456971
+        ? this.palette.glass
         : opening.kind === 'garageDoor'
-          ? 0x596367
-          : 0x895b40;
+          ? this.palette.garageDoor
+          : this.palette.door;
       const panel = new THREE.Mesh(
         geometry,
         new THREE.MeshStandardMaterial({
@@ -369,24 +602,122 @@ class FormaViewer {
         }),
       );
       const ratio = opening.centerOffset / length;
+      const centerX = wall.start.x + deltaX * ratio;
+      const centerZ = wall.start.y + deltaZ * ratio;
       panel.position.set(
-        wall.start.x + deltaX * ratio,
+        centerX,
         level.elevation + opening.sillHeight + opening.height / 2,
-        wall.start.y + deltaZ * ratio,
+        centerZ,
       );
       panel.castShadow = true;
       const frame = new THREE.LineSegments(
         new THREE.EdgesGeometry(geometry),
         new THREE.LineBasicMaterial({
-          color: opening.kind === 'window' ? 0xe7e4dc : 0x3e4749,
+          color: opening.kind === 'window'
+            ? this.palette.windowFrame
+            : 0x303638,
         }),
       );
       panel.add(frame);
+      this._addOpeningDetail(panel, opening, horizontal, depth);
       group.add(panel);
       if (opening.kind === 'garageDoor') {
-        this._buildDriveway(panel.position.x, panel.position.z, opening.width, group);
+        this._buildDriveway(centerX, centerZ, opening.width, group);
+      } else if (opening.kind === 'door' && level.floorIndex === 0) {
+        this._buildEntranceFeature(level, opening, wall, centerX, centerZ, group);
+        this._buildWalkway(centerX, centerZ, group);
       }
     }
+  }
+
+  _addOpeningDetail(panel, opening, horizontal, depth) {
+    const frameMaterial = new THREE.MeshStandardMaterial({
+      color: this.palette.windowFrame,
+      roughness: 0.55,
+    });
+    if (opening.kind === 'window') {
+      const variant = this.data.appearance?.facadeVariant ?? 0;
+      const vertical = new THREE.Mesh(
+        horizontal
+          ? new THREE.BoxGeometry(0.045, opening.height * 0.94, depth + 0.012)
+          : new THREE.BoxGeometry(depth + 0.012, opening.height * 0.94, 0.045),
+        frameMaterial,
+      );
+      panel.add(vertical);
+      if (variant === 1 || (variant === 2 && opening.width > 1.25)) {
+        const horizontalBar = new THREE.Mesh(
+          horizontal
+            ? new THREE.BoxGeometry(opening.width * 0.94, 0.045, depth + 0.014)
+            : new THREE.BoxGeometry(depth + 0.014, 0.045, opening.width * 0.94),
+          frameMaterial.clone(),
+        );
+        panel.add(horizontalBar);
+      }
+      return;
+    }
+    if (opening.kind === 'garageDoor') {
+      for (let y = -opening.height / 2 + 0.32; y < opening.height / 2; y += 0.34) {
+        const slat = new THREE.Mesh(
+          horizontal
+            ? new THREE.BoxGeometry(opening.width * 0.94, 0.018, depth + 0.014)
+            : new THREE.BoxGeometry(depth + 0.014, 0.018, opening.width * 0.94),
+          new THREE.MeshStandardMaterial({ color: 0x899092, roughness: 0.7 }),
+        );
+        slat.position.y = y;
+        panel.add(slat);
+      }
+    }
+  }
+
+  _buildEntranceFeature(level, opening, wall, centerX, centerZ, group) {
+    const variant = this.data.appearance?.facadeVariant ?? 0;
+    const outward = this._streetOutward();
+    const horizontal = Math.abs(wall.end.x - wall.start.x) >=
+      Math.abs(wall.end.y - wall.start.y);
+    const canopyWidth = opening.width + (variant === 1 ? 1.4 : 1.0);
+    const canopyDepth = variant === 2 ? 0.72 : 1.02;
+    const canopy = new THREE.Mesh(
+      horizontal
+        ? new THREE.BoxGeometry(canopyWidth, 0.13, canopyDepth)
+        : new THREE.BoxGeometry(canopyDepth, 0.13, canopyWidth),
+      new THREE.MeshStandardMaterial({
+        color: this.palette.accent,
+        roughness: 0.72,
+      }),
+    );
+    canopy.position.set(
+      centerX + outward.x * canopyDepth * 0.48,
+      level.elevation + opening.height + 0.24,
+      centerZ + outward.z * canopyDepth * 0.48,
+    );
+    canopy.castShadow = true;
+    group.add(canopy);
+
+    if (variant !== 2) {
+      const trimMaterial = new THREE.MeshStandardMaterial({
+        color: this.palette.accent,
+        roughness: 0.8,
+      });
+      for (const side of [-1, 1]) {
+        const trim = new THREE.Mesh(
+          horizontal
+            ? new THREE.BoxGeometry(0.2, opening.height + 0.36, 0.075)
+            : new THREE.BoxGeometry(0.075, opening.height + 0.36, 0.2),
+          trimMaterial.clone(),
+        );
+        trim.position.set(
+          centerX + (horizontal ? side * (opening.width / 2 + 0.18) : outward.x * 0.08),
+          level.elevation + (opening.height + 0.36) / 2,
+          centerZ + (horizontal ? outward.z * 0.08 : side * (opening.width / 2 + 0.18)),
+        );
+        trim.castShadow = true;
+        group.add(trim);
+      }
+    }
+  }
+
+  _streetOutward() {
+    return switchStreetDirection(this.data.site.streetSide);
   }
 
   _buildLowerRoofs() {
@@ -398,7 +729,12 @@ class FormaViewer {
         space.bounds,
         upper.footprint,
       )) {
-        const roof = this._boxFromBounds(exposed, 0.14, 0x59676a, 1);
+        const roof = this._boxFromBounds(
+          exposed,
+          0.14,
+          this.palette.lowerRoof,
+          1,
+        );
         roof.position.y =
           ground.elevation + this.data.dimensions.wallHeight + 0.07;
         roof.castShadow = true;
@@ -439,46 +775,68 @@ class FormaViewer {
   }
 
   _buildDriveway(centerX, centerZ, doorWidth, group) {
-    const site = this.data.site;
     const margin = 0.28;
-    let bounds;
-    switch (site.streetSide) {
-      case 'south':
-        bounds = {
-          x: centerX - doorWidth / 2 - margin,
-          y: centerZ,
-          width: doorWidth + margin * 2,
-          height: Math.max(site.depth - centerZ, 0.1),
-        };
-        break;
-      case 'east':
-        bounds = {
-          x: centerX,
-          y: centerZ - doorWidth / 2 - margin,
-          width: Math.max(site.width - centerX, 0.1),
-          height: doorWidth + margin * 2,
-        };
-        break;
-      case 'west':
-        bounds = {
-          x: 0,
-          y: centerZ - doorWidth / 2 - margin,
-          width: Math.max(centerX, 0.1),
-          height: doorWidth + margin * 2,
-        };
-        break;
-      default:
-        bounds = {
-          x: centerX - doorWidth / 2 - margin,
-          y: 0,
-          width: doorWidth + margin * 2,
-          height: Math.max(centerZ, 0.1),
-        };
-    }
-    const driveway = this._boxFromBounds(bounds, 0.065, 0xb9bcb8, 1);
-    driveway.position.y = -0.145;
+    const bounds = this._streetPathBounds(
+      centerX,
+      centerZ,
+      doorWidth + margin * 2,
+    );
+    const driveway = this._boxFromBounds(
+      bounds,
+      0.065,
+      this.palette.paving,
+      1,
+    );
+    driveway.position.y = -0.105;
     driveway.receiveShadow = true;
     group.add(driveway);
+  }
+
+  _buildWalkway(centerX, centerZ, group) {
+    const walkway = this._boxFromBounds(
+      this._streetPathBounds(centerX, centerZ, 1.15),
+      0.07,
+      this.palette.accent,
+      1,
+    );
+    walkway.position.y = -0.095;
+    walkway.receiveShadow = true;
+    group.add(walkway);
+  }
+
+  _streetPathBounds(centerX, centerZ, width) {
+    const site = this.data.site;
+    const extension = urbanContext.sidewalkWidth + 0.38;
+    switch (site.streetSide) {
+      case 'south':
+        return {
+          x: centerX - width / 2,
+          y: centerZ,
+          width,
+          height: Math.max(site.depth + extension - centerZ, 0.1),
+        };
+      case 'east':
+        return {
+          x: centerX,
+          y: centerZ - width / 2,
+          width: Math.max(site.width + extension - centerX, 0.1),
+          height: width,
+        };
+      case 'west':
+        return {
+          x: -extension,
+          y: centerZ - width / 2,
+          width: Math.max(centerX + extension, 0.1),
+          height: width,
+        };
+      default:
+        return {
+          x: centerX - width / 2,
+          y: -extension,
+          width,
+          height: Math.max(centerZ + extension, 0.1),
+        };
+    }
   }
 
   _buildRoof(roof) {
@@ -491,28 +849,68 @@ class FormaViewer {
     const bottom = bounds.y + bounds.height + overhang;
     const eave = roof.baseElevation + 0.06;
     const ridge = eave + roof.ridgeHeight;
+    if (roof.kind === 'flat') {
+      const roofBounds = {
+        x: left,
+        y: top,
+        width: right - left,
+        height: bottom - top,
+      };
+      const slab = this._boxFromBounds(
+        roofBounds,
+        0.2,
+        this.palette.roof,
+        exteriorMode ? 1 : 0.045,
+      );
+      slab.position.y = roof.baseElevation + 0.1;
+      slab.castShadow = exteriorMode;
+      slab.receiveShadow = true;
+      this.modelRoot.add(slab);
+      if (exteriorMode) {
+        const parapets = [
+          { x: left, y: top, width: right - left, height: 0.13 },
+          { x: left, y: bottom - 0.13, width: right - left, height: 0.13 },
+          { x: left, y: top, width: 0.13, height: bottom - top },
+          { x: right - 0.13, y: top, width: 0.13, height: bottom - top },
+        ];
+        for (const parapetBounds of parapets) {
+          const parapet = this._boxFromBounds(
+            parapetBounds,
+            0.32,
+            this.palette.roof,
+            1,
+          );
+          parapet.position.y = roof.baseElevation + 0.26;
+          parapet.castShadow = true;
+          this.modelRoot.add(parapet);
+        }
+      }
+      return;
+    }
     let positions;
     let indices;
     if (roof.ridgeAxis === 'x') {
       const middle = (top + bottom) / 2;
+      const hipInset = roof.kind === 'hip' ? (bottom - top) / 2 : 0;
       positions = [
         left, eave, top,
         right, eave, top,
         right, eave, bottom,
         left, eave, bottom,
-        left, ridge, middle,
-        right, ridge, middle,
+        Math.min(left + hipInset, right), ridge, middle,
+        Math.max(right - hipInset, left), ridge, middle,
       ];
       indices = [0, 1, 5, 0, 5, 4, 3, 5, 2, 3, 4, 5, 0, 4, 3, 1, 2, 5];
     } else {
       const middle = (left + right) / 2;
+      const hipInset = roof.kind === 'hip' ? (right - left) / 2 : 0;
       positions = [
         left, eave, top,
         left, eave, bottom,
         right, eave, bottom,
         right, eave, top,
-        middle, ridge, top,
-        middle, ridge, bottom,
+        middle, ridge, Math.min(top + hipInset, bottom),
+        middle, ridge, Math.max(bottom - hipInset, top),
       ];
       indices = [0, 1, 5, 0, 5, 4, 3, 4, 5, 3, 5, 2, 0, 4, 3, 1, 2, 5];
     }
@@ -524,7 +922,7 @@ class FormaViewer {
     geometry.setIndex(indices);
     geometry.computeVertexNormals();
     const material = new THREE.MeshStandardMaterial({
-      color: 0x4f5e62,
+      color: this.palette.roof,
       roughness: 0.78,
       metalness: 0.04,
       side: THREE.DoubleSide,

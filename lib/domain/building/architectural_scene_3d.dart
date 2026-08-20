@@ -9,6 +9,15 @@ enum ArchitecturalOpeningKind { door, window, garageDoor }
 
 enum RoofRidgeAxis { x, y }
 
+enum ArchitecturalRoofKind { gable, hip, flat }
+
+enum ArchitecturalExteriorStyle {
+  lightMinimal,
+  warmModern,
+  graphiteModern,
+  coastalModern,
+}
+
 enum Scene3DDisplayMode { exterior, cutaway }
 
 class ArchitecturalDimensions {
@@ -119,6 +128,7 @@ class ArchitecturalOpening3D {
 
 class ArchitecturalRoof3D {
   const ArchitecturalRoof3D({
+    required this.kind,
     required this.footprint,
     required this.baseElevation,
     required this.ridgeHeight,
@@ -126,6 +136,7 @@ class ArchitecturalRoof3D {
     required this.ridgeAxis,
   });
 
+  final ArchitecturalRoofKind kind;
   final Rect2D footprint;
   final double baseElevation;
   final double ridgeHeight;
@@ -133,11 +144,27 @@ class ArchitecturalRoof3D {
   final RoofRidgeAxis ridgeAxis;
 
   Map<String, Object> toJson() => <String, Object>{
+    'kind': kind.name,
     'footprint': footprint.toJson(),
     'baseElevation': baseElevation,
     'ridgeHeight': ridgeHeight,
     'overhang': overhang,
     'ridgeAxis': ridgeAxis.name,
+  };
+}
+
+class ArchitecturalAppearance3D {
+  const ArchitecturalAppearance3D({
+    required this.exteriorStyle,
+    required this.facadeVariant,
+  });
+
+  final ArchitecturalExteriorStyle exteriorStyle;
+  final int facadeVariant;
+
+  Map<String, Object> toJson() => <String, Object>{
+    'exteriorStyle': exteriorStyle.name,
+    'facadeVariant': facadeVariant,
   };
 }
 
@@ -179,12 +206,14 @@ class ArchitecturalScene3D {
     required this.dimensions,
     required this.levels,
     required this.roof,
+    required this.appearance,
   });
 
   final Site site;
   final ArchitecturalDimensions dimensions;
   final List<ArchitecturalLevel3D> levels;
   final ArchitecturalRoof3D? roof;
+  final ArchitecturalAppearance3D appearance;
 
   Map<String, Object?> toJson({
     required int selectedFloorIndex,
@@ -206,6 +235,7 @@ class ArchitecturalScene3D {
     },
     'levels': levels.map((level) => level.toJson()).toList(growable: false),
     'roof': roof?.toJson(),
+    'appearance': appearance.toJson(),
     'selection': <String, Object?>{
       'floorIndex': selectedFloorIndex,
       'roomId': selectedRoomId,

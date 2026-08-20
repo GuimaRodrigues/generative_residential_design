@@ -37,8 +37,9 @@ The domain contains immutable sites, project metadata, room requirements, normal
 - `DesignValidator` evaluates all MVP hard invariants.
 - `DesignScorer` evaluates isolated scoring categories and per-relationship details.
 - `ArchitecturalSceneBuilder` converts candidates into renderer-neutral levels,
-  spaces, slabs, unique exterior/interior wall segments, facade openings, and a
-  roof derived from the highest occupied footprint.
+  spaces, slabs, unique exterior/interior wall segments, facade openings, a
+  roof derived from the highest occupied footprint, and a deterministic exterior
+  appearance selected from the candidate seed and attempt.
 
 The current UI calls generation synchronously after first yielding one frame. Progress values are emitted by callbacks. Candidate limits keep the operation bounded. The call surface is deliberately narrow so a Worker-backed executor can replace this strategy later; no Flutter async behavior exists in the engine.
 
@@ -60,10 +61,12 @@ The 3D path uses the same candidate and selection state. A pure Dart
 view into a small JavaScript adapter. Three.js and OrbitControls are pinned and
 vendored locally; they are presentation dependencies and do not enter the
 domain or generation engine. Exterior mode renders continuous stacked walls and
-slabs, a gabled main roof, flat roofs over exposed lower volumes, facade markers, and the garage
-driveway; Cutaway mode fades non-selected levels, exposes the aligned stair
-opening, and preserves ray-cast room inspection. The adapter owns WebGL
-lifecycle, camera controls, resize handling, and GPU-resource disposal.
+slabs, gable, hip, or parapeted flat main roofs, flat roofs over exposed lower
+volumes, style-dependent facade materials and window proportions, a covered
+entry, garage door, pedestrian path, driveway, lawn, sidewalk, curb, and asphalt
+street. Cutaway mode fades non-selected levels, exposes the aligned stair opening,
+and preserves ray-cast room inspection. The adapter owns WebGL lifecycle, camera
+controls, street-facing initial framing, resize handling, and GPU-resource disposal.
 
 ## Persistence boundary
 

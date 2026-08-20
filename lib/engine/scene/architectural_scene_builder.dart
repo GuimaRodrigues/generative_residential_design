@@ -3,6 +3,7 @@ import 'dart:math' as math;
 import '../../core/geometry/geometry_utils.dart';
 import '../../core/geometry/point_2d.dart';
 import '../../core/geometry/rect_2d.dart';
+import '../../core/random/deterministic_random.dart';
 import '../../domain/building/architectural_scene_3d.dart';
 import '../../domain/design/design_candidate.dart';
 import '../../domain/requirements/room_type.dart';
@@ -19,6 +20,14 @@ class ArchitecturalSceneBuilder {
     required DesignCandidate candidate,
     required Site site,
   }) {
+    final appearanceCode = _appearanceCode(candidate);
+    final appearance = ArchitecturalAppearance3D(
+      exteriorStyle: ArchitecturalExteriorStyle
+          .values[appearanceCode % ArchitecturalExteriorStyle.values.length],
+      facadeVariant: (appearanceCode >>> 7) % 3,
+    );
+    final roofKind = ArchitecturalRoofKind
+        .values[(appearanceCode >>> 3) % ArchitecturalRoofKind.values.length];
     final levels = <ArchitecturalLevel3D>[];
     for (final floor in candidate.floors) {
       final spaces = floor.rooms
@@ -47,6 +56,7 @@ class ArchitecturalSceneBuilder {
               spaces: spaces,
               walls: walls,
               site: site,
+              exteriorStyle: appearance.exteriorStyle,
             ),
           ),
         ),
@@ -57,11 +67,25 @@ class ArchitecturalSceneBuilder {
       site: site,
       dimensions: dimensions,
       levels: immutableLevels,
-      roof: _buildRoof(immutableLevels),
+      roof: _buildRoof(immutableLevels, roofKind),
+      appearance: appearance,
     );
   }
 
-  ArchitecturalRoof3D? _buildRoof(List<ArchitecturalLevel3D> levels) {
+  int _appearanceCode(DesignCandidate candidate) {
+    var value =
+        (candidate.seed & 0xffffffff) ^
+        DeterministicRandom.multiplyUint32(candidate.attempt + 1, 0x9e3779b9);
+    value ^= value >>> 16;
+    value = DeterministicRandom.multiplyUint32(value, 0x7feb352d);
+    value ^= value >>> 15;
+    return value & 0x7fffffff;
+  }
+
+  ArchitecturalRoof3D? _buildRoof(
+    List<ArchitecturalLevel3D> levels,
+    ArchitecturalRoofKind kind,
+  ) {
     final occupied = levels.where((level) => level.footprint != null).toList()
       ..sort((first, second) => first.floorIndex.compareTo(second.floorIndex));
     if (occupied.isEmpty) return null;
@@ -69,10 +93,17 @@ class ArchitecturalSceneBuilder {
     final footprint = topLevel.footprint!;
     final shorterSpan = math.min(footprint.width, footprint.height);
     return ArchitecturalRoof3D(
+      kind: kind,
       footprint: footprint,
       baseElevation: topLevel.elevation + dimensions.wallHeight,
-      ridgeHeight: (shorterSpan * 0.28).clamp(1.1, 2.6),
-      overhang: dimensions.roofOverhang,
+      ridgeHeight: switch (kind) {
+        ArchitecturalRoofKind.gable => (shorterSpan * 0.28).clamp(1.1, 2.6),
+        ArchitecturalRoofKind.hip => (shorterSpan * 0.24).clamp(0.95, 2.2),
+        ArchitecturalRoofKind.flat => 0.24,
+      },
+      overhang: kind == ArchitecturalRoofKind.flat
+          ? 0.18
+          : dimensions.roofOverhang,
       ridgeAxis: footprint.width >= footprint.height
           ? RoofRidgeAxis.x
           : RoofRidgeAxis.y,
@@ -165,6 +196,7 @@ class ArchitecturalSceneBuilder {
     required List<ArchitecturalSpace3D> spaces,
     required List<ArchitecturalWall3D> walls,
     required Site site,
+    required ArchitecturalExteriorStyle exteriorStyle,
   }) {
     if (footprint == null) return const <ArchitecturalOpening3D>[];
     final exteriorWalls = walls
@@ -267,15 +299,36 @@ class ArchitecturalSceneBuilder {
         RoomType.bathroom || RoomType.toilet || RoomType.laundry => true,
         _ => false,
       };
+      final widthFactor = switch (exteriorStyle) {
+        ArchitecturalExteriorStyle.lightMinimal => 0.52,
+        ArchitecturalExteriorStyle.warmModern => 0.44,
+        ArchitecturalExteriorStyle.graphiteModern => 0.36,
+        ArchitecturalExteriorStyle.coastalModern => 0.48,
+      };
+      final regularHeight = switch (exteriorStyle) {
+        ArchitecturalExteriorStyle.lightMinimal => 1.3,
+        ArchitecturalExteriorStyle.warmModern => 1.18,
+        ArchitecturalExteriorStyle.graphiteModern => 1.45,
+        ArchitecturalExteriorStyle.coastalModern => 1.12,
+      };
+      final regularSill = switch (exteriorStyle) {
+        ArchitecturalExteriorStyle.lightMinimal => 0.78,
+        ArchitecturalExteriorStyle.warmModern => 0.88,
+        ArchitecturalExteriorStyle.graphiteModern => 0.66,
+        ArchitecturalExteriorStyle.coastalModern => 0.92,
+      };
       final windowWidth = wetRoom
           ? math.min(0.75, availableWidth)
-          : math.min((segment.length * 0.42).clamp(0.9, 1.8), availableWidth);
+          : math.min(
+              (segment.length * widthFactor).clamp(0.78, 2.15),
+              availableWidth,
+            );
       addOpening(
         segment: segment,
         kind: ArchitecturalOpeningKind.window,
         width: windowWidth,
-        height: wetRoom ? 0.65 : 1.15,
-        sillHeight: wetRoom ? 1.5 : 0.9,
+        height: wetRoom ? 0.65 : regularHeight,
+        sillHeight: wetRoom ? 1.5 : regularSill,
       );
     }
     return openings;
