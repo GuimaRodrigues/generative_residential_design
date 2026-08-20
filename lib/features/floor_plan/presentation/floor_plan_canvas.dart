@@ -11,10 +11,12 @@ import '../../../domain/design/floor_plan.dart';
 import '../../../domain/design/generated_room.dart';
 import '../../../domain/requirements/room_type.dart';
 import '../../../domain/site/site.dart';
+import '../../../engine/scene/architectural_scene_builder.dart';
 import '../../candidates/application/candidate_selection_cubit.dart';
 import '../../generation/application/generation_cubit.dart';
 import '../../project/application/project_cubit.dart';
 import '../application/floor_plan_cubit.dart';
+import 'scene_3d_view.dart';
 
 class FloorPlanCanvas extends StatelessWidget {
   const FloorPlanCanvas({super.key});
@@ -40,18 +42,39 @@ class FloorPlanCanvas extends StatelessWidget {
                         selectedIndex: selectedIndex,
                         floorCount:
                             projectState.project.requirements.floorCount,
+                        viewState: viewState,
                       ),
                       Expanded(
                         child: candidate == null
                             ? const _EmptyCanvas()
-                            : _PlanStage(
-                                key: ValueKey(
-                                  '${candidate.id}-${viewState.floorIndex}',
+                            : switch (viewState.viewMode) {
+                                FloorPlanViewMode.plan2D => _PlanStage(
+                                  key: ValueKey(
+                                    '${candidate.id}-${viewState.floorIndex}',
+                                  ),
+                                  candidate: candidate,
+                                  site: projectState.project.requirements.site,
+                                  viewState: viewState,
                                 ),
-                                candidate: candidate,
-                                site: projectState.project.requirements.site,
-                                viewState: viewState,
-                              ),
+                                FloorPlanViewMode.model3D => Scene3DView(
+                                  key: ValueKey('scene-3d-${candidate.id}'),
+                                  scene: const ArchitecturalSceneBuilder()
+                                      .build(
+                                        candidate: candidate,
+                                        site: projectState
+                                            .project
+                                            .requirements
+                                            .site,
+                                      ),
+                                  selectedFloorIndex: viewState.floorIndex,
+                                  selectedRoomId: viewState.selectedRoomId,
+                                  onRoomSelected: (roomId, floorIndex) =>
+                                      context.read<FloorPlanCubit>().selectRoom(
+                                        roomId,
+                                        floorIndex: floorIndex,
+                                      ),
+                                ),
+                              },
                       ),
                       _CanvasFooter(
                         candidate: candidate,
@@ -76,10 +99,12 @@ class _CanvasHeader extends StatelessWidget {
     required this.candidate,
     required this.selectedIndex,
     required this.floorCount,
+    required this.viewState,
   });
   final DesignCandidate? candidate;
   final int? selectedIndex;
   final int floorCount;
+  final FloorPlanViewState viewState;
 
   @override
   Widget build(BuildContext context) => Container(
@@ -114,6 +139,35 @@ class _CanvasHeader extends StatelessWidget {
         ),
         const Spacer(),
         if (candidate != null) ...<Widget>[
+          SegmentedButton<FloorPlanViewMode>(
+            key: const ValueKey('floor-plan-view-mode'),
+            segments: const <ButtonSegment<FloorPlanViewMode>>[
+              ButtonSegment<FloorPlanViewMode>(
+                value: FloorPlanViewMode.plan2D,
+                label: Text('2D'),
+                icon: Icon(Icons.grid_4x4, size: 15),
+              ),
+              ButtonSegment<FloorPlanViewMode>(
+                value: FloorPlanViewMode.model3D,
+                label: Text('3D'),
+                icon: Icon(Icons.view_in_ar, size: 15),
+              ),
+            ],
+            selected: <FloorPlanViewMode>{viewState.viewMode},
+            showSelectedIcon: false,
+            style: ButtonStyle(
+              visualDensity: VisualDensity.compact,
+              textStyle: const WidgetStatePropertyAll(
+                TextStyle(fontSize: 10, fontWeight: FontWeight.w800),
+              ),
+              padding: const WidgetStatePropertyAll(
+                EdgeInsets.symmetric(horizontal: 9),
+              ),
+            ),
+            onSelectionChanged: (selection) =>
+                context.read<FloorPlanCubit>().selectViewMode(selection.single),
+          ),
+          const SizedBox(width: 18),
           const Text(
             'OVERALL',
             style: TextStyle(

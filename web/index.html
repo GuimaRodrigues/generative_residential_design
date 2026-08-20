@@ -41,6 +41,36 @@
     For more details:
     * https://docs.flutter.dev/platform-integration/web/initialization
   -->
+  <script>
+    const loadForma3D = () =>
+      window.forma3DReady ??= import('./scene3d.js');
+    const reportForma3DError = (container, error) => {
+      console.error('Unable to start the 3D renderer.', error);
+      container.textContent = 'Unable to start the 3D renderer in this browser.';
+      container.style.display = 'grid';
+      container.style.placeItems = 'center';
+      container.style.color = '#58676a';
+      container.style.font = '13px Arial, sans-serif';
+    };
+    window.Forma3DBridge = {
+      create: (container, sceneJson, callback) =>
+        loadForma3D()
+          .then((module) => module.create(container, sceneJson, callback))
+          .catch((error) => reportForma3DError(container, error)),
+      update: (container, sceneJson) =>
+        loadForma3D()
+          .then((module) => module.update(container, sceneJson))
+          .catch((error) => reportForma3DError(container, error)),
+      resetCamera: (container) =>
+        loadForma3D()
+          .then((module) => module.resetCamera(container))
+          .catch((error) => reportForma3DError(container, error)),
+      dispose: (container) =>
+        loadForma3D()
+          .then((module) => module.dispose(container))
+          .catch((error) => console.error('Unable to dispose 3D.', error)),
+    };
+  </script>
   <script src="flutter_bootstrap.js" async></script>
 </body>
 </html>

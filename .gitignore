@@ -46,3 +46,6 @@ app.*.map.json
 
 # Widget Preview related
 .widget_preview/
+
+# JavaScript tooling used only to refresh vendored Three.js modules.
+node_modules/

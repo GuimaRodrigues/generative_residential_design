@@ -35,6 +35,13 @@ void main() {
     expect(find.text('CANDIDATE 1'), findsOneWidget);
     expect(find.text('GROUND FLOOR'), findsOneWidget);
     expect(find.textContaining('valid designs'), findsOneWidget);
+
+    await tester.tap(find.text('3D'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('The interactive 3D model is available in Flutter Web.'),
+      findsOneWidget,
+    );
   });
 
   testWidgets('seed editing preserves focus while updating', (tester) async {

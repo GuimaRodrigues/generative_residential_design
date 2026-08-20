@@ -1,0 +1,10 @@
+{
+  "name": "forma-residential-design-web-vendor",
+  "private": true,
+  "scripts": {
+    "vendor:three": "node tool/vendor_three.mjs"
+  },
+  "devDependencies": {
+    "three": "0.185.1"
+  }
+}

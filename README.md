@@ -15,6 +15,7 @@ This is an early generative-design foundation. It is not an AI image generator, 
 - Area-guided recursive slicing/BSP layout generation on a 0.25 m grid
 - Multiple candidates, hard validation, category scores, deduplication, and ranking
 - Candidate selection, floor switching, pan/zoom, and selectable room inspection
+- Interactive WebGL 3D visualization with orbit/zoom controls and synchronized floor/room selection
 - Versioned project JSON import/export and domain-generated vector SVG export
 - Feasibility errors and generation rejection diagnostics
 
@@ -31,21 +32,28 @@ For a release web bundle:
 flutter build web
 ```
 
+The Web bundle vendors Three.js locally at an exact version, so the application
+does not depend on a runtime CDN. When upgrading the renderer dependency, run
+`npm install` followed by `npm run vendor:three` and commit the refreshed files
+under `web/vendor/three`.
+
 The first launch contains a ready-to-run two-floor sample project. Its generated geometry is not hardcoded: click **Generate** to search from the sample requirements and seed `839172`.
 
 ## Architecture
 
 ```mermaid
 flowchart TD
-  UI[Flutter presentation\nCustomPainter + forms] --> Cubits[Application Cubits]
+  UI[Flutter presentation\n2D CustomPainter + 3D platform view] --> Cubits[Application Cubits]
   Cubits --> Runner[Generation orchestration]
   Runner --> Engine[Pure Dart procedural engine]
   Engine --> Domain[Immutable domain + geometry]
+  Domain --> Scene[Canonical architectural Scene3D]
+  Scene --> Renderer[Three.js WebGL adapter]
   UI --> Persistence[Conditional browser file adapter]
   Persistence --> Serialization[Pure Dart JSON / SVG serialization]
 ```
 
-The dependency boundary is deliberate: `lib/engine` imports no Flutter libraries. Geometry is always stored in meters; only `FloorPlanPainter` transforms meters into pixels. Browser APIs are contained in a conditional file-transfer implementation.
+The dependency boundary is deliberate: `lib/engine` imports no Flutter libraries. Geometry is always stored in meters. `FloorPlanPainter` transforms meters into 2D pixels, while `ArchitecturalSceneBuilder` derives levels, slabs, spaces, and unique wall topology for renderers. Browser APIs are contained in conditional adapters.
 
 ### Generation pipeline
 
@@ -100,6 +108,7 @@ Tests cover geometry, all street orientations, serialization roundtrips, feasibi
 - Rectangular lots and rectangular slicing layouts only
 - One building rectangle per occupied floor; no corridors or circulation graph synthesis
 - No doors, windows, furniture, structure, plumbing, sunlight, irregular boundaries, or manual wall editing
+- The 3D model is conceptual massing with slabs and full-height walls; openings and roof generation are not implemented yet
 - Heuristics are not jurisdictional codes or professional architectural review
 - Generation runs bounded on the browser event loop; the engine boundary is ready for a future Web Worker executor
 - Hill-climbing genome mutation is not yet enabled; the current search uses independent seeded slicing candidates

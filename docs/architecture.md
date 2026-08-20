@@ -36,6 +36,8 @@ The domain contains immutable sites, project metadata, room requirements, normal
 - `PartitionGenerator` builds explicit `RoomLeaf`/`SplitNode` slicing trees while assigning snapped geometry.
 - `DesignValidator` evaluates all MVP hard invariants.
 - `DesignScorer` evaluates isolated scoring categories and per-relationship details.
+- `ArchitecturalSceneBuilder` converts candidates into renderer-neutral levels,
+  spaces, slabs, and unique exterior/interior wall segments.
 
 The current UI calls generation synchronously after first yielding one frame. Progress values are emitted by callbacks. Candidate limits keep the operation bounded. The call surface is deliberately narrow so a Worker-backed executor can replace this strategy later; no Flutter async behavior exists in the engine.
 
@@ -44,13 +46,20 @@ The current UI calls generation synchronously after first yielding one frame. Pr
 - `ProjectCubit` owns the current editable project and generation settings.
 - `GenerationCubit` owns only idle/generating/success/failure lifecycle and orchestration. It depends on the `GenerationExecutor` interface; `LocalGenerationExecutor` is the current browser-local implementation.
 - `CandidateSelectionCubit` stores the selected ranked alternative without triggering generation.
-- `FloorPlanCubit` stores floor and selected-room inspection state.
+- `FloorPlanCubit` stores 2D/3D mode, floor, and selected-room inspection state.
 
 Pan/zoom transformation state stays local to the canvas widget because it is high-frequency ephemeral UI state.
 
 ### Presentation
 
 The desktop workspace contains a requirements panel, a large `CustomPainter` plan canvas, and a ranked candidate/diagnostics panel. `FloorPlanPainter` computes a viewport transform from site meters to canvas pixels on every paint. Site, setback envelope, street edge, footprint, rooms, dimensions, and selection are rendered from domain geometry.
+
+The 3D path uses the same candidate and selection state. A pure Dart
+`ArchitecturalScene3D` is serialized through a conditional Flutter Web platform
+view into a small JavaScript adapter. Three.js and OrbitControls are pinned and
+vendored locally; they are presentation dependencies and do not enter the
+domain or generation engine. The adapter owns WebGL lifecycle, camera controls,
+ray-cast room selection, resize handling, and GPU-resource disposal.
 
 ## Persistence boundary
 
