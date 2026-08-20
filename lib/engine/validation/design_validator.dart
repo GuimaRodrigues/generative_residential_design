@@ -120,6 +120,23 @@ class DesignValidator {
         }
       }
     }
+    for (final upperFloor in candidate.floors.where(
+      (floor) => floor.floorIndex > 0 && floor.footprint != null,
+    )) {
+      final lowerFloors = candidate.floors.where(
+        (floor) => floor.floorIndex == upperFloor.floorIndex - 1,
+      );
+      final lowerFootprint = lowerFloors.isEmpty
+          ? null
+          : lowerFloors.first.footprint;
+      if (lowerFootprint == null ||
+          !lowerFootprint.containsRect(upperFloor.footprint!)) {
+        add(
+          HardConstraintType.verticalSupport,
+          'Floor ${upperFloor.floorIndex + 1} is not supported by the floor below.',
+        );
+      }
+    }
     if (requirements.maximumTotalArea case final maximum?) {
       if (candidate.totalArea > maximum + 1e-6) {
         add(

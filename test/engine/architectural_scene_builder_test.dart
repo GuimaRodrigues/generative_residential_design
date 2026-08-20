@@ -56,6 +56,22 @@ void main() {
     expect(shared.end.x, 4);
     expect(shared.length, 4);
     expect(shared.thickness, 0.12);
+
+    final openings = scene.levels.single.openings;
+    expect(
+      openings.where(
+        (opening) => opening.kind == ArchitecturalOpeningKind.door,
+      ),
+      hasLength(1),
+    );
+    expect(
+      openings.where(
+        (opening) => opening.kind == ArchitecturalOpeningKind.window,
+      ),
+      isNotEmpty,
+    );
+    expect(scene.roof, isNotNull);
+    expect(scene.roof!.footprint, scene.levels.single.footprint);
   });
 
   test('preserves floor elevations, spaces, and selection in scene JSON', () {
@@ -92,6 +108,8 @@ void main() {
     expect(scene.levels, hasLength(2));
     expect(scene.levels[0].elevation, 0);
     expect(scene.levels[1].elevation, 3.1);
+    expect(scene.roof!.baseElevation, closeTo(5.9, 1e-9));
+    expect(scene.roof!.ridgeHeight, greaterThan(1));
     expect(scene.levels.expand((level) => level.spaces), hasLength(2));
     expect(
       scene.levels
@@ -99,16 +117,17 @@ void main() {
           .every((wall) => wall.length > 0 && wall.height == 2.8),
       isTrue,
     );
-    final selection =
-        scene.toJson(
-              selectedFloorIndex: 1,
-              selectedRoomId: 'upper-room',
-            )['selection']!
-            as Map<String, Object?>;
+    final json = scene.toJson(
+      selectedFloorIndex: 1,
+      selectedRoomId: 'upper-room',
+      displayMode: Scene3DDisplayMode.cutaway,
+    );
+    final selection = json['selection']! as Map<String, Object?>;
     expect(selection, <String, Object?>{
       'floorIndex': 1,
       'roomId': 'upper-room',
     });
+    expect(json['display'], <String, Object>{'mode': 'cutaway'});
   });
 
   test('2D and 3D modes share floor and room selection state', () async {

@@ -5,6 +5,12 @@ import '../site/site.dart';
 
 enum WallKind { exterior, interior }
 
+enum ArchitecturalOpeningKind { door, window, garageDoor }
+
+enum RoofRidgeAxis { x, y }
+
+enum Scene3DDisplayMode { exterior, cutaway }
+
 class ArchitecturalDimensions {
   const ArchitecturalDimensions({
     this.floorToFloorHeight = 3.1,
@@ -12,6 +18,7 @@ class ArchitecturalDimensions {
     this.exteriorWallThickness = 0.18,
     this.interiorWallThickness = 0.12,
     this.slabThickness = 0.18,
+    this.roofOverhang = 0.45,
   });
 
   final double floorToFloorHeight;
@@ -19,6 +26,7 @@ class ArchitecturalDimensions {
   final double exteriorWallThickness;
   final double interiorWallThickness;
   final double slabThickness;
+  final double roofOverhang;
 }
 
 class ArchitecturalSpace3D {
@@ -76,6 +84,63 @@ class ArchitecturalWall3D {
   };
 }
 
+class ArchitecturalOpening3D {
+  const ArchitecturalOpening3D({
+    required this.id,
+    required this.wallId,
+    required this.floorIndex,
+    required this.kind,
+    required this.centerOffset,
+    required this.width,
+    required this.height,
+    required this.sillHeight,
+  });
+
+  final String id;
+  final String wallId;
+  final int floorIndex;
+  final ArchitecturalOpeningKind kind;
+  final double centerOffset;
+  final double width;
+  final double height;
+  final double sillHeight;
+
+  Map<String, Object> toJson() => <String, Object>{
+    'id': id,
+    'wallId': wallId,
+    'floorIndex': floorIndex,
+    'kind': kind.name,
+    'centerOffset': centerOffset,
+    'width': width,
+    'height': height,
+    'sillHeight': sillHeight,
+  };
+}
+
+class ArchitecturalRoof3D {
+  const ArchitecturalRoof3D({
+    required this.footprint,
+    required this.baseElevation,
+    required this.ridgeHeight,
+    required this.overhang,
+    required this.ridgeAxis,
+  });
+
+  final Rect2D footprint;
+  final double baseElevation;
+  final double ridgeHeight;
+  final double overhang;
+  final RoofRidgeAxis ridgeAxis;
+
+  Map<String, Object> toJson() => <String, Object>{
+    'footprint': footprint.toJson(),
+    'baseElevation': baseElevation,
+    'ridgeHeight': ridgeHeight,
+    'overhang': overhang,
+    'ridgeAxis': ridgeAxis.name,
+  };
+}
+
 class ArchitecturalLevel3D {
   const ArchitecturalLevel3D({
     required this.floorIndex,
@@ -84,6 +149,7 @@ class ArchitecturalLevel3D {
     required this.footprint,
     required this.spaces,
     required this.walls,
+    required this.openings,
   });
 
   final int floorIndex;
@@ -92,6 +158,7 @@ class ArchitecturalLevel3D {
   final Rect2D? footprint;
   final List<ArchitecturalSpace3D> spaces;
   final List<ArchitecturalWall3D> walls;
+  final List<ArchitecturalOpening3D> openings;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'floorIndex': floorIndex,
@@ -100,6 +167,9 @@ class ArchitecturalLevel3D {
     'footprint': footprint?.toJson(),
     'spaces': spaces.map((space) => space.toJson()).toList(growable: false),
     'walls': walls.map((wall) => wall.toJson()).toList(growable: false),
+    'openings': openings
+        .map((opening) => opening.toJson())
+        .toList(growable: false),
   };
 }
 
@@ -108,15 +178,18 @@ class ArchitecturalScene3D {
     required this.site,
     required this.dimensions,
     required this.levels,
+    required this.roof,
   });
 
   final Site site;
   final ArchitecturalDimensions dimensions;
   final List<ArchitecturalLevel3D> levels;
+  final ArchitecturalRoof3D? roof;
 
   Map<String, Object?> toJson({
     required int selectedFloorIndex,
     String? selectedRoomId,
+    Scene3DDisplayMode displayMode = Scene3DDisplayMode.exterior,
   }) => <String, Object?>{
     'site': <String, Object?>{
       ...site.toJson(),
@@ -129,11 +202,14 @@ class ArchitecturalScene3D {
       'exteriorWallThickness': dimensions.exteriorWallThickness,
       'interiorWallThickness': dimensions.interiorWallThickness,
       'slabThickness': dimensions.slabThickness,
+      'roofOverhang': dimensions.roofOverhang,
     },
     'levels': levels.map((level) => level.toJson()).toList(growable: false),
+    'roof': roof?.toJson(),
     'selection': <String, Object?>{
       'floorIndex': selectedFloorIndex,
       'roomId': selectedRoomId,
     },
+    'display': <String, Object>{'mode': displayMode.name},
   };
 }

@@ -15,7 +15,7 @@ This is an early generative-design foundation. It is not an AI image generator, 
 - Area-guided recursive slicing/BSP layout generation on a 0.25 m grid
 - Multiple candidates, hard validation, category scores, deduplication, and ranking
 - Candidate selection, floor switching, pan/zoom, and selectable room inspection
-- Interactive WebGL 3D visualization with orbit/zoom controls and synchronized floor/room selection
+- Interactive WebGL 3D with aligned floors, gabled roof, facade openings, Exterior/Cutaway modes, and synchronized selection
 - Versioned project JSON import/export and domain-generated vector SVG export
 - Feasibility errors and generation rejection diagnostics
 
@@ -60,7 +60,7 @@ The dependency boundary is deliberate: `lib/engine` imports no Flutter libraries
 1. Validate obvious feasibility failures.
 2. Expand room counts into stable, unique room instances.
 3. Honor locked floors and heuristically balance flexible rooms.
-4. Choose a seeded rectangular footprint inside each floor's envelope.
+4. Choose a seeded ground footprint, then center every upper footprint inside the supporting floor below.
 5. Recursively split it with an explicit slicing tree. Subtree target areas guide split ratios; small seeded perturbations provide alternatives.
 6. Snap every partition to the configured 0.25 m grid.
 7. Reject missing, overlapping, out-of-bounds, undersized, off-grid, or incorrectly assigned rooms.
@@ -71,7 +71,7 @@ Identical requirements, settings, and seed produce identical geometry, scores, a
 
 ## Hard and soft constraints
 
-Hard constraints invalidate a candidate: required counts, legal bounds, no overlaps, valid geometry, minimum area/dimensions, locked floors, maximum total area, and grid alignment.
+Hard constraints invalidate a candidate: required counts, legal bounds, no overlaps, valid geometry, minimum area/dimensions, locked floors, vertical support, maximum total area, and grid alignment.
 
 Soft constraints affect rank without invalidating a design: adjacency, near/away relationships, street distance, target-area fit, proportions, footprint compactness, and flexible-floor preference. The inspector exposes both category scores and per-preference satisfaction.
 
@@ -107,8 +107,8 @@ Tests cover geometry, all street orientations, serialization roundtrips, feasibi
 
 - Rectangular lots and rectangular slicing layouts only
 - One building rectangle per occupied floor; no corridors or circulation graph synthesis
-- No doors, windows, furniture, structure, plumbing, sunlight, irregular boundaries, or manual wall editing
-- The 3D model is conceptual massing with slabs and full-height walls; openings and roof generation are not implemented yet
+- No furniture, structure, plumbing, sunlight, irregular boundaries, or manual wall editing
+- Roof and facade openings are heuristic preview geometry; they are not yet editable construction assemblies or circulation-aware openings in the floor-plan topology
 - Heuristics are not jurisdictional codes or professional architectural review
 - Generation runs bounded on the browser event loop; the engine boundary is ready for a future Web Worker executor
 - Hill-climbing genome mutation is not yet enabled; the current search uses independent seeded slicing candidates

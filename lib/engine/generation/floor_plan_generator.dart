@@ -198,6 +198,18 @@ class FloorPlanGenerator {
     final totalTarget = assignments
         .expand((rooms) => rooms)
         .fold<double>(0, (sum, room) => sum + room.targetArea);
+    final floorTargets = assignments
+        .map(
+          (rooms) =>
+              rooms.fold<double>(0, (sum, room) => sum + room.targetArea),
+        )
+        .toList(growable: false);
+    final floorMinimums = assignments
+        .map(
+          (rooms) => rooms.fold<double>(0, (sum, room) => sum + room.minArea),
+        )
+        .toList(growable: false);
+    Rect2D? supportingFootprint;
     for (var floor = 0; floor < requirements.floorCount; floor++) {
       final rooms = assignments[floor];
       if (rooms.isEmpty) {
@@ -206,22 +218,29 @@ class FloorPlanGenerator {
         );
         continue;
       }
-      final floorTarget = rooms.fold<double>(
-        0,
-        (sum, room) => sum + room.targetArea,
-      );
+      if (floor > 0 && supportingFootprint == null) return null;
+      final floorTarget = floorTargets[floor];
       final budget = requirements.maximumTotalArea == null
           ? null
           : requirements.maximumTotalArea! * floorTarget / totalTarget;
+      final upperFloorMinimum = floor + 1 < floorMinimums.length
+          ? floorMinimums.skip(floor + 1).fold<double>(0, math.max)
+          : 0.0;
+      final upperFloorTarget = floor + 1 < floorTargets.length
+          ? floorTargets.skip(floor + 1).fold<double>(0, math.max)
+          : 0.0;
       PartitionOutcome? outcome;
       Rect2D? footprint;
       for (var retry = 0; retry < 18 && outcome == null; retry++) {
         footprint = _createFootprint(
           rooms: rooms,
-          envelope: requirements.site.buildableEnvelope,
+          envelope: supportingFootprint ?? requirements.site.buildableEnvelope,
           budget: budget,
           grid: config.gridSize,
           random: random,
+          minimumFootprintArea: upperFloorMinimum,
+          targetFootprintArea: upperFloorTarget,
+          centerInEnvelope: floor > 0,
         );
         if (footprint == null) continue;
         outcome = partitioner.generate(
@@ -239,6 +258,7 @@ class FloorPlanGenerator {
           rooms: List.unmodifiable(outcome.rooms),
         ),
       );
+      supportingFootprint = footprint;
     }
     return List<FloorPlan>.unmodifiable(plans);
   }
@@ -249,15 +269,20 @@ class FloorPlanGenerator {
     required double? budget,
     required double grid,
     required DeterministicRandom random,
+    double minimumFootprintArea = 0,
+    double targetFootprintArea = 0,
+    bool centerInEnvelope = false,
   }) {
-    final minimumArea = rooms.fold<double>(
+    final roomMinimumArea = rooms.fold<double>(
       0,
       (sum, room) => sum + room.minArea,
     );
-    final targetArea = rooms.fold<double>(
+    final minimumArea = math.max(roomMinimumArea, minimumFootprintArea);
+    final roomTargetArea = rooms.fold<double>(
       0,
       (sum, room) => sum + room.targetArea,
     );
+    final targetArea = math.max(roomTargetArea, targetFootprintArea);
     final upperArea = math.min(envelope.area, budget ?? envelope.area);
     if (minimumArea > upperArea + 1e-6) return null;
     final desiredArea = (targetArea * random.between(0.96, 1.12)).clamp(
@@ -297,8 +322,12 @@ class FloorPlanGenerator {
     final minY = ceilToGrid(envelope.top, grid: grid);
     final maxY = floorToGrid(envelope.bottom - height, grid: grid);
     if (maxX < minX - 1e-6 || maxY < minY - 1e-6) return null;
-    final x = _gridChoice(minX, maxX, grid, random);
-    final y = _gridChoice(minY, maxY, grid, random);
+    final x = centerInEnvelope
+        ? snapToGrid((minX + maxX) / 2, grid: grid).clamp(minX, maxX)
+        : _gridChoice(minX, maxX, grid, random);
+    final y = centerInEnvelope
+        ? snapToGrid((minY + maxY) / 2, grid: grid).clamp(minY, maxY)
+        : _gridChoice(minY, maxY, grid, random);
     return Rect2D(x: x, y: y, width: width, height: height);
   }
 

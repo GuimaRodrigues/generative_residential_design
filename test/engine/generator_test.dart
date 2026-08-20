@@ -1,5 +1,6 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:generative_residential_design/core/geometry/geometry_utils.dart';
+import 'package:generative_residential_design/core/geometry/rect_2d.dart';
 import 'package:generative_residential_design/domain/constraints/constraint.dart';
 import 'package:generative_residential_design/domain/design/design_candidate.dart';
 import 'package:generative_residential_design/domain/design/floor_plan.dart';
@@ -40,6 +41,16 @@ void main() {
         project.requirements.normalizeRooms().length,
       );
       expect(candidate.score.overall, inInclusiveRange(0, 100));
+      if (candidate.floors.length == 2 &&
+          candidate.floors[1].footprint != null) {
+        expect(
+          candidate.floors[0].footprint!.containsRect(
+            candidate.floors[1].footprint!,
+          ),
+          isTrue,
+          reason: 'upper floor must be supported by the ground floor',
+        );
+      }
       for (final room in candidate.rooms) {
         expect(
           project.requirements.site.buildableEnvelope.containsRect(room.bounds),
@@ -186,6 +197,48 @@ void main() {
         HardConstraintType.requiredRoomCount,
         HardConstraintType.supportedFloorCount,
       ]),
+    );
+  });
+
+  test('validator rejects an upper floor without support below', () {
+    final project = createSampleProject();
+    final generated = generator
+        .generate(
+          requirements: project.requirements,
+          config: config,
+          seed: project.seed,
+        )
+        .candidates
+        .first;
+    final upper = generated.floors[1];
+    final unsupported = DesignCandidate(
+      id: generated.id,
+      seed: generated.seed,
+      attempt: generated.attempt,
+      floors: <FloorPlan>[
+        generated.floors[0],
+        FloorPlan(
+          floorIndex: upper.floorIndex,
+          footprint: Rect2D(
+            x: upper.footprint!.x + 100,
+            y: upper.footprint!.y,
+            width: upper.footprint!.width,
+            height: upper.footprint!.height,
+          ),
+          rooms: upper.rooms,
+        ),
+      ],
+      score: generated.score,
+      warnings: generated.warnings,
+    );
+
+    final violations = const DesignValidator().validate(
+      unsupported,
+      project.requirements,
+    );
+    expect(
+      violations.map((violation) => violation.constraint.type),
+      contains(HardConstraintType.verticalSupport),
     );
   });
 }

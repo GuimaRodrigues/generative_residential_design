@@ -37,7 +37,8 @@ The domain contains immutable sites, project metadata, room requirements, normal
 - `DesignValidator` evaluates all MVP hard invariants.
 - `DesignScorer` evaluates isolated scoring categories and per-relationship details.
 - `ArchitecturalSceneBuilder` converts candidates into renderer-neutral levels,
-  spaces, slabs, and unique exterior/interior wall segments.
+  spaces, slabs, unique exterior/interior wall segments, facade openings, and a
+  roof derived from the highest occupied footprint.
 
 The current UI calls generation synchronously after first yielding one frame. Progress values are emitted by callbacks. Candidate limits keep the operation bounded. The call surface is deliberately narrow so a Worker-backed executor can replace this strategy later; no Flutter async behavior exists in the engine.
 
@@ -58,8 +59,10 @@ The 3D path uses the same candidate and selection state. A pure Dart
 `ArchitecturalScene3D` is serialized through a conditional Flutter Web platform
 view into a small JavaScript adapter. Three.js and OrbitControls are pinned and
 vendored locally; they are presentation dependencies and do not enter the
-domain or generation engine. The adapter owns WebGL lifecycle, camera controls,
-ray-cast room selection, resize handling, and GPU-resource disposal.
+domain or generation engine. Exterior mode renders the complete stacked mass,
+roof, and facade markers; Cutaway mode fades non-selected levels and preserves
+ray-cast room inspection. The adapter owns WebGL lifecycle, camera controls,
+resize handling, and GPU-resource disposal.
 
 ## Persistence boundary
 

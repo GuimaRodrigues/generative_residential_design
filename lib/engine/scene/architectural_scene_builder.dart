@@ -1,7 +1,11 @@
+import 'dart:math' as math;
+
 import '../../core/geometry/geometry_utils.dart';
 import '../../core/geometry/point_2d.dart';
+import '../../core/geometry/rect_2d.dart';
 import '../../domain/building/architectural_scene_3d.dart';
 import '../../domain/design/design_candidate.dart';
+import '../../domain/requirements/room_type.dart';
 import '../../domain/site/site.dart';
 
 class ArchitecturalSceneBuilder {
@@ -15,34 +19,63 @@ class ArchitecturalSceneBuilder {
     required DesignCandidate candidate,
     required Site site,
   }) {
-    final levels = candidate.floors
-        .map((floor) {
-          final spaces = floor.rooms
-              .map(
-                (room) => ArchitecturalSpace3D(
-                  id: room.id,
-                  roomType: room.roomType,
-                  floorIndex: floor.floorIndex,
-                  bounds: room.bounds,
-                ),
-              )
-              .toList(growable: false);
-          return ArchitecturalLevel3D(
-            floorIndex: floor.floorIndex,
-            elevation: floor.floorIndex * dimensions.floorToFloorHeight,
-            slabThickness: dimensions.slabThickness,
-            footprint: floor.footprint,
-            spaces: List<ArchitecturalSpace3D>.unmodifiable(spaces),
-            walls: List<ArchitecturalWall3D>.unmodifiable(
-              _buildWalls(floor.floorIndex, spaces),
+    final levels = <ArchitecturalLevel3D>[];
+    for (final floor in candidate.floors) {
+      final spaces = floor.rooms
+          .map(
+            (room) => ArchitecturalSpace3D(
+              id: room.id,
+              roomType: room.roomType,
+              floorIndex: floor.floorIndex,
+              bounds: room.bounds,
             ),
-          );
-        })
-        .toList(growable: false);
+          )
+          .toList(growable: false);
+      final walls = _buildWalls(floor.floorIndex, spaces);
+      levels.add(
+        ArchitecturalLevel3D(
+          floorIndex: floor.floorIndex,
+          elevation: floor.floorIndex * dimensions.floorToFloorHeight,
+          slabThickness: dimensions.slabThickness,
+          footprint: floor.footprint,
+          spaces: List<ArchitecturalSpace3D>.unmodifiable(spaces),
+          walls: List<ArchitecturalWall3D>.unmodifiable(walls),
+          openings: List<ArchitecturalOpening3D>.unmodifiable(
+            _buildOpenings(
+              floorIndex: floor.floorIndex,
+              footprint: floor.footprint,
+              spaces: spaces,
+              walls: walls,
+              site: site,
+            ),
+          ),
+        ),
+      );
+    }
+    final immutableLevels = List<ArchitecturalLevel3D>.unmodifiable(levels);
     return ArchitecturalScene3D(
       site: site,
       dimensions: dimensions,
-      levels: List<ArchitecturalLevel3D>.unmodifiable(levels),
+      levels: immutableLevels,
+      roof: _buildRoof(immutableLevels),
+    );
+  }
+
+  ArchitecturalRoof3D? _buildRoof(List<ArchitecturalLevel3D> levels) {
+    final occupied = levels.where((level) => level.footprint != null).toList()
+      ..sort((first, second) => first.floorIndex.compareTo(second.floorIndex));
+    if (occupied.isEmpty) return null;
+    final topLevel = occupied.last;
+    final footprint = topLevel.footprint!;
+    final shorterSpan = math.min(footprint.width, footprint.height);
+    return ArchitecturalRoof3D(
+      footprint: footprint,
+      baseElevation: topLevel.elevation + dimensions.wallHeight,
+      ridgeHeight: (shorterSpan * 0.28).clamp(1.1, 2.6),
+      overhang: dimensions.roofOverhang,
+      ridgeAxis: footprint.width >= footprint.height
+          ? RoofRidgeAxis.x
+          : RoofRidgeAxis.y,
     );
   }
 
@@ -126,6 +159,187 @@ class ArchitecturalSceneBuilder {
     return walls;
   }
 
+  List<ArchitecturalOpening3D> _buildOpenings({
+    required int floorIndex,
+    required Rect2D? footprint,
+    required List<ArchitecturalSpace3D> spaces,
+    required List<ArchitecturalWall3D> walls,
+    required Site site,
+  }) {
+    if (footprint == null) return const <ArchitecturalOpening3D>[];
+    final exteriorWalls = walls
+        .where((wall) => wall.kind == WallKind.exterior)
+        .toList(growable: false);
+    final segments = <_FacadeSegment>[];
+    for (final space in spaces) {
+      for (final wall in exteriorWalls) {
+        final segment = _facadeSegment(space, wall, site, footprint);
+        if (segment != null) segments.add(segment);
+      }
+    }
+    segments.sort((first, second) {
+      final wallOrder = first.wall.id.compareTo(second.wall.id);
+      if (wallOrder != 0) return wallOrder;
+      final offsetOrder = first.startOffset.compareTo(second.startOffset);
+      return offsetOrder != 0
+          ? offsetOrder
+          : first.space.id.compareTo(second.space.id);
+    });
+
+    _FacadeSegment? garageEntry;
+    _FacadeSegment? mainEntry;
+    if (floorIndex == 0) {
+      garageEntry = segments
+          .where(
+            (segment) =>
+                segment.streetFacing &&
+                segment.space.roomType == RoomType.garage &&
+                segment.length >= 2.4,
+          )
+          .firstOrNull;
+      final entryCandidates =
+          segments
+              .where(
+                (segment) =>
+                    segment.streetFacing &&
+                    segment.space.roomType != RoomType.garage &&
+                    segment.length >= 1.2,
+              )
+              .toList(growable: false)
+            ..sort((first, second) {
+              final priority = _entryPriority(first.space.roomType)
+                  .compareTo(_entryPriority(second.space.roomType));
+              return priority != 0
+                  ? priority
+                  : first.space.id.compareTo(second.space.id);
+            });
+      mainEntry = entryCandidates.firstOrNull;
+    }
+
+    final openings = <ArchitecturalOpening3D>[];
+    void addOpening({
+      required _FacadeSegment segment,
+      required ArchitecturalOpeningKind kind,
+      required double width,
+      required double height,
+      required double sillHeight,
+    }) {
+      openings.add(
+        ArchitecturalOpening3D(
+          id: 'opening-$floorIndex-${kind.name}-${openings.length + 1}',
+          wallId: segment.wall.id,
+          floorIndex: floorIndex,
+          kind: kind,
+          centerOffset: (segment.startOffset + segment.endOffset) / 2,
+          width: width,
+          height: height,
+          sillHeight: sillHeight,
+        ),
+      );
+    }
+
+    if (garageEntry case final segment?) {
+      addOpening(
+        segment: segment,
+        kind: ArchitecturalOpeningKind.garageDoor,
+        width: math.min(2.8, segment.length - 0.35),
+        height: 2.25,
+        sillHeight: 0,
+      );
+    }
+    if (mainEntry case final segment?) {
+      addOpening(
+        segment: segment,
+        kind: ArchitecturalOpeningKind.door,
+        width: math.min(1.05, segment.length - 0.3),
+        height: 2.18,
+        sillHeight: 0,
+      );
+    }
+
+    for (final segment in segments) {
+      if (identical(segment, garageEntry) || identical(segment, mainEntry)) {
+        continue;
+      }
+      final availableWidth = segment.length - 0.45;
+      if (availableWidth < 0.6) continue;
+      final wetRoom = switch (segment.space.roomType) {
+        RoomType.bathroom || RoomType.toilet || RoomType.laundry => true,
+        _ => false,
+      };
+      final windowWidth = wetRoom
+          ? math.min(0.75, availableWidth)
+          : math.min((segment.length * 0.42).clamp(0.9, 1.8), availableWidth);
+      addOpening(
+        segment: segment,
+        kind: ArchitecturalOpeningKind.window,
+        width: windowWidth,
+        height: wetRoom ? 0.65 : 1.15,
+        sillHeight: wetRoom ? 1.5 : 0.9,
+      );
+    }
+    return openings;
+  }
+
+  _FacadeSegment? _facadeSegment(
+    ArchitecturalSpace3D space,
+    ArchitecturalWall3D wall,
+    Site site,
+    Rect2D footprint,
+  ) {
+    final bounds = space.bounds;
+    double? start;
+    double? end;
+    if (wall.isHorizontal &&
+        (approximatelyEqual(bounds.top, wall.start.y) ||
+            approximatelyEqual(bounds.bottom, wall.start.y))) {
+      start = math.max(bounds.left, wall.start.x);
+      end = math.min(bounds.right, wall.end.x);
+    } else if (!wall.isHorizontal &&
+        (approximatelyEqual(bounds.left, wall.start.x) ||
+            approximatelyEqual(bounds.right, wall.start.x))) {
+      start = math.max(bounds.top, wall.start.y);
+      end = math.min(bounds.bottom, wall.end.y);
+    }
+    if (start == null || end == null || end - start < 0.5) return null;
+    final wallStart = wall.isHorizontal ? wall.start.x : wall.start.y;
+    return _FacadeSegment(
+      space: space,
+      wall: wall,
+      startOffset: start - wallStart,
+      endOffset: end - wallStart,
+      streetFacing: _isStreetFacing(wall, site, footprint),
+    );
+  }
+
+  bool _isStreetFacing(
+    ArchitecturalWall3D wall,
+    Site site,
+    Rect2D footprint,
+  ) => switch (site.streetSide) {
+    StreetSide.north =>
+      wall.isHorizontal && approximatelyEqual(wall.start.y, footprint.top),
+    StreetSide.south =>
+      wall.isHorizontal && approximatelyEqual(wall.start.y, footprint.bottom),
+    StreetSide.east =>
+      !wall.isHorizontal && approximatelyEqual(wall.start.x, footprint.right),
+    StreetSide.west =>
+      !wall.isHorizontal && approximatelyEqual(wall.start.x, footprint.left),
+  };
+
+  int _entryPriority(RoomType type) => switch (type) {
+    RoomType.livingRoom => 0,
+    RoomType.hallway => 1,
+    RoomType.stairs => 2,
+    RoomType.diningRoom => 3,
+    RoomType.office => 4,
+    RoomType.kitchen => 5,
+    RoomType.bedroom || RoomType.masterBedroom => 6,
+    RoomType.closet => 7,
+    RoomType.bathroom || RoomType.toilet || RoomType.laundry => 8,
+    RoomType.garage => 9,
+  };
+
   String _wallId(int floorIndex, Point2D start, Point2D end) =>
       'wall-$floorIndex-${start.x.toStringAsFixed(2)}-'
       '${start.y.toStringAsFixed(2)}-${end.x.toStringAsFixed(2)}-'
@@ -160,4 +374,22 @@ class _WallFragment {
   final double start;
   final double end;
   final WallKind kind;
+}
+
+class _FacadeSegment {
+  const _FacadeSegment({
+    required this.space,
+    required this.wall,
+    required this.startOffset,
+    required this.endOffset,
+    required this.streetFacing,
+  });
+
+  final ArchitecturalSpace3D space;
+  final ArchitecturalWall3D wall;
+  final double startOffset;
+  final double endOffset;
+  final bool streetFacing;
+
+  double get length => endOffset - startOffset;
 }

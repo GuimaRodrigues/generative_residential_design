@@ -42,6 +42,7 @@ class Scene3DView extends StatefulWidget {
 class _Scene3DViewState extends State<Scene3DView> {
   JSObject? _container;
   late final JSFunction _roomSelectionCallback;
+  Scene3DDisplayMode _displayMode = Scene3DDisplayMode.exterior;
 
   @override
   void initState() {
@@ -99,17 +100,57 @@ class _Scene3DViewState extends State<Scene3DView> {
           ),
         ),
       ),
-      const Positioned(
+      Positioned(
+        right: 58,
+        top: 12,
+        child: SegmentedButton<Scene3DDisplayMode>(
+          segments: const <ButtonSegment<Scene3DDisplayMode>>[
+            ButtonSegment<Scene3DDisplayMode>(
+              value: Scene3DDisplayMode.exterior,
+              icon: Icon(Icons.home_work_outlined, size: 15),
+              label: Text('EXTERIOR'),
+            ),
+            ButtonSegment<Scene3DDisplayMode>(
+              value: Scene3DDisplayMode.cutaway,
+              icon: Icon(Icons.layers_outlined, size: 15),
+              label: Text('CUTAWAY'),
+            ),
+          ],
+          selected: <Scene3DDisplayMode>{_displayMode},
+          showSelectedIcon: false,
+          style: ButtonStyle(
+            backgroundColor: WidgetStateProperty.resolveWith((states) {
+              return states.contains(WidgetState.selected)
+                  ? const Color(0xFFD5E8E4)
+                  : Colors.white.withValues(alpha: 0.94);
+            }),
+            visualDensity: VisualDensity.compact,
+            textStyle: const WidgetStatePropertyAll(
+              TextStyle(fontSize: 9, fontWeight: FontWeight.w800),
+            ),
+          ),
+          onSelectionChanged: (selection) {
+            setState(() => _displayMode = selection.single);
+            final container = _container;
+            if (container != null) {
+              _updateViewer(container, _sceneJson().toJS);
+            }
+          },
+        ),
+      ),
+      Positioned(
         left: 12,
         bottom: 10,
         child: IgnorePointer(
           child: DecoratedBox(
-            decoration: BoxDecoration(color: Color(0xDDF7F8F5)),
+            decoration: const BoxDecoration(color: Color(0xDDF7F8F5)),
             child: Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8, vertical: 5),
+              padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 5),
               child: Text(
-                'Drag to orbit · Scroll to zoom · Select a room to inspect',
-                style: TextStyle(fontSize: 9.5, color: Color(0xFF58676A)),
+                _displayMode == Scene3DDisplayMode.exterior
+                    ? 'Exterior model · Drag to orbit · Scroll to zoom'
+                    : 'Cutaway model · Select a room to inspect',
+                style: const TextStyle(fontSize: 9.5, color: Color(0xFF58676A)),
               ),
             ),
           ),
@@ -122,6 +163,7 @@ class _Scene3DViewState extends State<Scene3DView> {
     widget.scene.toJson(
       selectedFloorIndex: widget.selectedFloorIndex,
       selectedRoomId: widget.selectedRoomId,
+      displayMode: _displayMode,
     ),
   );
 }

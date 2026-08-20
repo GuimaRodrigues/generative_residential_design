@@ -14,9 +14,9 @@ Ground/upper locks are placed first. For a two-floor project, `any` rooms are sh
 
 ## 4. Footprint selection
 
-Each occupied floor receives a rectangle entirely inside the buildable envelope. Its desired area is based on summed room targets with a small seeded variation, bounded by minimum room area, envelope capacity, and the optional total-area budget. Width is sampled from a feasible range; height is derived from area. Dimensions and location are snapped globally to the generation grid.
+The ground floor receives a rectangle entirely inside the buildable envelope. Its desired area is based on summed room targets with a small seeded variation and is also large enough to support the minimum/target area needed above. Width is sampled from a feasible range; height is derived from area.
 
-Different floors may have different footprints. Their overlap contributes to compactness scoring but is not currently a hard constraint.
+Every upper footprint is generated inside and centered on the supporting footprint below. Floors may still have different areas, producing intentional terraces or setbacks, but an upper floor can no longer float beside or outside the ground floor. Dimensions and locations stay on the global generation grid.
 
 ## 5. Slicing tree and partitioning
 
@@ -53,6 +53,7 @@ The validator checks:
 - no positive-area room overlap on a floor
 - minimum room area and rotatable minimum dimensions
 - locked floor assignments
+- every occupied upper footprint contained by the supporting floor below
 - global grid alignment
 - optional maximum total area
 

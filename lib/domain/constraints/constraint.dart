@@ -18,6 +18,7 @@ enum HardConstraintType {
   supportedFloorCount,
   gridAlignment,
   maximumTotalArea,
+  verticalSupport,
 }
 
 class HardConstraint extends DesignConstraint {

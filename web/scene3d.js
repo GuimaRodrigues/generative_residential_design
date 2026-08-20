@@ -39,7 +39,7 @@ class FormaViewer {
 
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0xeceeea);
-    this.scene.fog = new THREE.FogExp2(0xeceeea, 0.012);
+    this.scene.fog = new THREE.FogExp2(0xeceeea, 0.006);
     this.camera = new THREE.PerspectiveCamera(38, 1, 0.05, 1000);
     this.renderer = new THREE.WebGLRenderer({
       antialias: true,
@@ -49,7 +49,7 @@ class FormaViewer {
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.05;
+    this.renderer.toneMappingExposure = 1;
     this.renderer.shadowMap.enabled = true;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     container.appendChild(this.renderer.domElement);
@@ -83,16 +83,23 @@ class FormaViewer {
 
   resetCamera() {
     const { site, levels, dimensions } = this.data;
-    const centerX = site.width / 2;
-    const centerZ = site.depth / 2;
-    const maximum = Math.max(site.width, site.depth, 10);
+    const occupied = levels.filter((level) => level.footprint);
+    const base = occupied[0]?.footprint ?? {
+      x: 0,
+      y: 0,
+      width: site.width,
+      height: site.depth,
+    };
+    const centerX = base.x + base.width / 2;
+    const centerZ = base.y + base.height / 2;
+    const maximum = Math.max(base.width, base.height, 8);
     const buildingHeight =
       Math.max(levels.length - 1, 0) * dimensions.floorToFloorHeight +
       dimensions.wallHeight;
     this.camera.position.set(
-      centerX + maximum * 0.88,
-      buildingHeight + maximum * 0.72,
-      centerZ + maximum * 0.95,
+      centerX + maximum * 1.05,
+      buildingHeight + maximum * 0.78,
+      centerZ + maximum * 1.12,
     );
     this.controls.target.set(centerX, buildingHeight * 0.32, centerZ);
     this.controls.update();
@@ -112,8 +119,8 @@ class FormaViewer {
   }
 
   _addLights() {
-    this.scene.add(new THREE.HemisphereLight(0xf6fbff, 0x76806f, 2.1));
-    const sun = new THREE.DirectionalLight(0xfff5df, 3.2);
+    this.scene.add(new THREE.HemisphereLight(0xf6fbff, 0x76806f, 1.55));
+    const sun = new THREE.DirectionalLight(0xfff5df, 2.45);
     sun.position.set(-24, 38, 18);
     sun.castShadow = true;
     sun.shadow.mapSize.set(2048, 2048);
@@ -174,6 +181,7 @@ class FormaViewer {
     this.pickableRooms = [];
     this._buildSite();
     for (const level of this.data.levels) this._buildLevel(level);
+    if (this.data.roof) this._buildRoof(this.data.roof);
   }
 
   _buildSite() {
@@ -248,7 +256,8 @@ class FormaViewer {
 
   _buildLevel(level) {
     const active = level.floorIndex === this.data.selection.floorIndex;
-    const opacity = active ? 1 : 0.2;
+    const exteriorMode = this.data.display?.mode !== 'cutaway';
+    const opacity = exteriorMode || active ? 1 : 0.12;
     const group = new THREE.Group();
     group.name = `level-${level.floorIndex}`;
     this.modelRoot.add(group);
@@ -264,7 +273,8 @@ class FormaViewer {
       group.add(slab);
     }
     for (const space of level.spaces) {
-      const selected = space.id === this.data.selection.roomId;
+      const selected =
+        !exteriorMode && space.id === this.data.selection.roomId;
       const color = selected
         ? 0xc96d49
         : (roomColors[space.roomType] ?? 0xcbd5cf);
@@ -272,15 +282,15 @@ class FormaViewer {
         space.bounds,
         0.055,
         color,
-        active ? 0.98 : 0.16,
+        exteriorMode ? 1 : active ? 0.98 : 0.1,
       );
       floor.position.y = level.elevation + 0.028;
       floor.userData.roomId = space.id;
       floor.userData.floorIndex = level.floorIndex;
       floor.receiveShadow = true;
-      this.pickableRooms.push(floor);
+      if (!exteriorMode && active) this.pickableRooms.push(floor);
       group.add(floor);
-      if (active) {
+      if (!exteriorMode && active) {
         const label = this._makeLabel(space.label, selected);
         label.position.set(
           space.bounds.x + space.bounds.width / 2,
@@ -295,6 +305,7 @@ class FormaViewer {
     for (const wall of level.walls) {
       group.add(this._buildWall(wall, level.elevation, opacity));
     }
+    if (exteriorMode) this._buildOpenings(level, group);
   }
 
   _buildWall(wall, elevation, opacity) {
@@ -304,7 +315,7 @@ class FormaViewer {
     const mesh = new THREE.Mesh(
       new THREE.BoxGeometry(length, wall.height, wall.thickness),
       new THREE.MeshStandardMaterial({
-        color: wall.kind === 'exterior' ? 0xf4f0e8 : 0xe5e3dd,
+        color: wall.kind === 'exterior' ? 0xeee9df : 0xd8d7d2,
         roughness: 0.82,
         transparent: opacity < 1,
         opacity,
@@ -320,6 +331,117 @@ class FormaViewer {
     mesh.castShadow = opacity >= 1;
     mesh.receiveShadow = true;
     return mesh;
+  }
+
+  _buildOpenings(level, group) {
+    const walls = new Map(level.walls.map((wall) => [wall.id, wall]));
+    for (const opening of level.openings ?? []) {
+      const wall = walls.get(opening.wallId);
+      if (!wall) continue;
+      const deltaX = wall.end.x - wall.start.x;
+      const deltaZ = wall.end.y - wall.start.y;
+      const length = Math.hypot(deltaX, deltaZ);
+      if (length <= 0) continue;
+      const horizontal = Math.abs(deltaX) >= Math.abs(deltaZ);
+      const depth = wall.thickness + 0.035;
+      const geometry = horizontal
+        ? new THREE.BoxGeometry(opening.width, opening.height, depth)
+        : new THREE.BoxGeometry(depth, opening.height, opening.width);
+      const color = opening.kind === 'window'
+        ? 0x456971
+        : opening.kind === 'garageDoor'
+          ? 0x596367
+          : 0x895b40;
+      const panel = new THREE.Mesh(
+        geometry,
+        new THREE.MeshStandardMaterial({
+          color,
+          roughness: opening.kind === 'window' ? 0.25 : 0.68,
+          metalness: opening.kind === 'window' ? 0.22 : 0.04,
+        }),
+      );
+      const ratio = opening.centerOffset / length;
+      panel.position.set(
+        wall.start.x + deltaX * ratio,
+        level.elevation + opening.sillHeight + opening.height / 2,
+        wall.start.y + deltaZ * ratio,
+      );
+      panel.castShadow = true;
+      const frame = new THREE.LineSegments(
+        new THREE.EdgesGeometry(geometry),
+        new THREE.LineBasicMaterial({
+          color: opening.kind === 'window' ? 0xe7e4dc : 0x3e4749,
+        }),
+      );
+      panel.add(frame);
+      group.add(panel);
+    }
+  }
+
+  _buildRoof(roof) {
+    const exteriorMode = this.data.display?.mode !== 'cutaway';
+    const bounds = roof.footprint;
+    const overhang = roof.overhang;
+    const left = bounds.x - overhang;
+    const right = bounds.x + bounds.width + overhang;
+    const top = bounds.y - overhang;
+    const bottom = bounds.y + bounds.height + overhang;
+    const eave = roof.baseElevation + 0.06;
+    const ridge = eave + roof.ridgeHeight;
+    let positions;
+    let indices;
+    if (roof.ridgeAxis === 'x') {
+      const middle = (top + bottom) / 2;
+      positions = [
+        left, eave, top,
+        right, eave, top,
+        right, eave, bottom,
+        left, eave, bottom,
+        left, ridge, middle,
+        right, ridge, middle,
+      ];
+      indices = [0, 1, 5, 0, 5, 4, 3, 5, 2, 3, 4, 5, 0, 4, 3, 1, 2, 5];
+    } else {
+      const middle = (left + right) / 2;
+      positions = [
+        left, eave, top,
+        left, eave, bottom,
+        right, eave, bottom,
+        right, eave, top,
+        middle, ridge, top,
+        middle, ridge, bottom,
+      ];
+      indices = [0, 1, 5, 0, 5, 4, 3, 4, 5, 3, 5, 2, 0, 4, 3, 1, 2, 5];
+    }
+    const geometry = new THREE.BufferGeometry();
+    geometry.setAttribute(
+      'position',
+      new THREE.Float32BufferAttribute(positions, 3),
+    );
+    geometry.setIndex(indices);
+    geometry.computeVertexNormals();
+    const material = new THREE.MeshStandardMaterial({
+      color: 0x4f5e62,
+      roughness: 0.78,
+      metalness: 0.04,
+      side: THREE.DoubleSide,
+      transparent: !exteriorMode,
+      opacity: exteriorMode ? 1 : 0.045,
+      depthWrite: exteriorMode,
+    });
+    const mesh = new THREE.Mesh(geometry, material);
+    mesh.castShadow = exteriorMode;
+    mesh.receiveShadow = true;
+    this.modelRoot.add(mesh);
+    const outline = new THREE.LineSegments(
+      new THREE.EdgesGeometry(geometry, 18),
+      new THREE.LineBasicMaterial({
+        color: 0x334448,
+        transparent: !exteriorMode,
+        opacity: exteriorMode ? 0.62 : 0.18,
+      }),
+    );
+    this.modelRoot.add(outline);
   }
 
   _boxFromBounds(bounds, height, color, opacity) {
